@@ -1,131 +1,149 @@
 "use client";
 import React, { useState } from 'react';
-import { ReservaState, ReservaConfirmada } from '../types';
+import { useRouter } from 'next/navigation'; 
+import { ReservaState, Pasajero } from '../types'; // Ruta relativa
 
+// --- Props ---
 interface Props {
   reserva: ReservaState;
-  setReserva: React.Dispatch<React.SetStateAction<ReservaState>>;
-  setPantalla: React.Dispatch<React.SetStateAction<string>>;
-  setReservaConfirmada: React.Dispatch<React.SetStateAction<ReservaConfirmada | null>>;
+  onFormChange: (asiento: number, campo: keyof Pasajero, valor: string) => void;
+  onRegresar: () => void;
 }
 
-export default function PantallaFormulario({ reserva, setReserva, setPantalla, setReservaConfirmada }: Props) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+export default function PantallaFormulario({ reserva, onFormChange, onRegresar }: Props) {
+  const router = useRouter();
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handlePasajeroChange = (asientoNum: number, e: React.ChangeEvent<HTMLInputElement>) => {
-    const { id, value } = e.target;
-    setReserva((prev) => {
-      const nuevosPasajeros = new Map(prev.pasajeros);
-      const pasajero = nuevosPasajeros.get(asientoNum);
-      if (pasajero) {
-        nuevosPasajeros.set(asientoNum, { ...pasajero, [id]: value });
-      }
-      return { ...prev, pasajeros: nuevosPasajeros };
-    });
-  };
-
+  // --- Manejador de Envío (¡ACTUALIZADO PARA STRIPE!) ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setError('');
+    setIsLoading(true);
+    setError(null);
 
-    const pasajerosArray = [...reserva.pasajeros.entries()].map(([asiento, data]) => ({
+    // 1. Validar que todos los formularios estén llenos
+    for (const pasajero of reserva.pasajeros.values()) {
+      if (!pasajero.nombre || !pasajero.telefono) {
+        setError('Por favor, llena el nombre y teléfono de todos los pasajeros.');
+        setIsLoading(false);
+        return;
+      }
+    }
+
+    // 2. Convertir el Map de pasajeros a un array simple para el JSON
+    const pasajerosArray = Array.from(reserva.pasajeros.entries()).map(([asiento, datos]) => ({
       asiento: asiento,
-      nombre: data.nombre,
-      telefono: data.telefono,
-      email: data.email
+      nombre: datos.nombre,
+      telefono: datos.telefono,
+      email: datos.email || '', // Enviar email aunque esté vacío
     }));
 
-    const payload = {
-      corrida_id: reserva.corrida!.id, // ! asume que corrida no es null
-      pasajeros: pasajerosArray,
-    };
-
     try {
-      const res = await fetch(`http://localhost:5000/api/reservar`, {
+      // 3. Llamar al endpoint /api/reservar (que ahora devuelve una URL de pago)
+      const res = await fetch('http://localhost:5000/api/reservar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+          corrida_id: reserva.corrida!.id, // '!' afirma que corrida no es null
+          pasajeros: pasajerosArray,
+        }),
       });
 
+      const data = await res.json();
+
       if (!res.ok) {
-        if (res.status === 409) {
-          const errData = await res.json();
-          alert(`Error: Asientos ${errData.asientos_ocupados.join(', ')} ya no están disponibles.`);
-          setPantalla('asientos'); 
-        } else {
-          throw new Error('No se pudo crear la reserva');
-        }
-      } else {
-        const data: ReservaConfirmada = await res.json();
-        setReservaConfirmada(data);
-        setPantalla('confirmacion');
+        // Si el backend da un error (ej. asientos ocupados), lo mostramos
+        throw new Error(data.error || 'No se pudo crear la sesión de pago.');
       }
+
+      // 4. ¡ÉXITO! Redirigir al usuario a la página de pago de Stripe
+      if (data.payment_url) {
+        window.location.href = data.payment_url;
+      } else {
+        throw new Error('No se recibió la URL de pago del servidor.');
+      }
+
     } catch (err: any) {
+      console.error(err);
       setError(err.message);
-    } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
   return (
-    <section className="pantalla">
-      <button onClick={() => setPantalla('asientos')} className="text-brand-secondary">
+    <section className="pantalla space-y-4">
+      <button onClick={onRegresar} className="btn-regresar text-brand-secondary mb-4">
         <i className="fas fa-arrow-left"></i> Regresar
       </button>
-      <h2 className="text-xl font-semibold text-center text-gray-800">Datos de los Pasajeros</h2>
       
-      <form onSubmit={handleSubmit} className="space-y-6 mt-4">
-        {[...reserva.pasajeros.entries()].map(([asientoNum, pasajero]) => (
-          <div key={asientoNum} className="bg-white p-4 rounded-xl shadow-md">
-            <h3 className="text-lg font-bold text-brand-primary mb-3">
-              Pasajero - Asiento #{asientoNum}
-            </h3>
-            <div className="space-y-4">
+      <div className="bg-white p-4 rounded-xl shadow">
+        <h2 className="text-xl font-semibold text-center text-gray-800 mb-4">Datos de los Pasajeros</h2>
+        <p className="text-sm text-gray-600">Ruta: <strong className="text-brand-primary">{reserva.ruta_nombre}</strong></p>
+        <p className="text-sm text-gray-600">Horario: <strong className="text-brand-primary">{reserva.corrida?.hora_salida}</strong></p>
+      </div>
+
+      <form id="form-reserva" onSubmit={handleSubmit} className="space-y-6">
+        {/* Iteramos sobre los asientos seleccionados y generamos un formulario para cada uno
+        */}
+        {reserva.asientos.map((asientoNum) => {
+          const pasajero = reserva.pasajeros.get(asientoNum);
+          return (
+            <div key={asientoNum} className="bg-white p-5 rounded-xl shadow-md border border-gray-200">
+              <h3 className="text-lg font-bold text-brand-primary mb-3">Pasajero - Asiento #{asientoNum}</h3>
+              
+              {/* Campo Nombre */}
               <div>
-                <label htmlFor="nombre" className="block text-sm font-medium text-gray-700">Nombre Completo*</label>
-                <input 
-                  type="text" 
-                  id="nombre" 
-                  value={pasajero.nombre}
-                  onChange={(e) => handlePasajeroChange(asientoNum, e)}
-                  className="mt-1 block w-full p-3 border border-gray-300 rounded-xl shadow-sm" required 
+                <label htmlFor={`nombre-${asientoNum}`} className="block text-sm font-medium text-gray-700">Nombre Completo*</label>
+                <input
+                  type="text"
+                  id={`nombre-${asientoNum}`}
+                  value={pasajero?.nombre || ''}
+                  onChange={(e) => onFormChange(asientoNum, 'nombre', e.target.value)}
+                  className="mt-1 block w-full p-3 border border-gray-300 rounded-xl shadow-sm"
+                  required
                 />
               </div>
-              <div>
-                <label htmlFor="telefono" className="block text-sm font-medium text-gray-700">Teléfono / WhatsApp (10 dígitos)*</label>
-                <input 
-                  type="tel" 
-                  id="telefono" 
-                  value={pasajero.telefono}
-                  onChange={(e) => handlePasajeroChange(asientoNum, e)}
-                  maxLength={10} 
-                  className="mt-1 block w-full p-3 border border-gray-300 rounded-xl shadow-sm" required 
+              
+              {/* Campo Teléfono */}
+              <div className="mt-4">
+                <label htmlFor={`telefono-${asientoNum}`} className="block text-sm font-medium text-gray-700">Teléfono / WhatsApp (10 dígitos)*</label>
+                <input
+                  type="tel"
+                  id={`telefono-${asientoNum}`}
+                  value={pasajero?.telefono || ''}
+                  onChange={(e) => onFormChange(asientoNum, 'telefono', e.target.value)}
+                  maxLength={10}
+                  className="mt-1 block w-full p-3 border border-gray-300 rounded-xl shadow-sm"
+                  required
                 />
+                {/* Aquí puedes añadir validación de teléfono si lo deseas */}
               </div>
-              <div>
-                <label htmlFor="email" className="block text-sm font-medium text-gray-700">Email (Opcional)</label>
-                <input 
-                  type="email" 
-                  id="email" 
-                  value={pasajero.email}
-                  onChange={(e) => handlePasajeroChange(asientoNum, e)}
-                  className="mt-1 block w-full p-3 border border-gray-300 rounded-xl shadow-sm" 
+
+              {/* Campo Email (Opcional) */}
+              <div className="mt-4">
+                <label htmlFor={`email-${asientoNum}`} className="block text-sm font-medium text-gray-700">Email (Opcional)</label>
+                <input
+                  type="email"
+                  id={`email-${asientoNum}`}
+                  value={pasajero?.email || ''}
+                  onChange={(e) => onFormChange(asientoNum, 'email', e.target.value)}
+                  className="mt-1 block w-full p-3 border border-gray-300 rounded-xl shadow-sm"
                 />
               </div>
             </div>
-          </div>
-        ))}
-        
-        {error && <p className="text-center text-brand-alert">{error}</p>}
+          );
+        })}
 
-        <button 
-          type="submit" 
-          className="w-full bg-brand-success text-white font-bold py-3 rounded-xl shadow-lg transition hover:bg-opacity-90 disabled:bg-gray-400"
-          disabled={loading}
+        {error && (
+          <p className="text-center text-brand-alert text-sm">{error}</p>
+        )}
+
+        <button
+          type="submit"
+          disabled={isLoading}
+          className="w-full bg-brand-success text-white font-bold py-4 rounded-xl shadow-lg transition hover:bg-opacity-90 disabled:bg-gray-400 disabled:cursor-not-allowed"
         >
-          {loading ? 'Reservando...' : 'Finalizar Reserva'}
+          {isLoading ? 'Procesando pago...' : 'Ir a Pagar'}
         </button>
       </form>
     </section>

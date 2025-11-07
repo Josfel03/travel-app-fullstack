@@ -6,6 +6,7 @@ from flask_cors import CORS  # <-- 1. IMPORTA ESTO
 import traceback # Para imprimir errores detallados
 import qrcode
 import io 
+import stripe # (NUEVO) Para pagos
 from flask_bcrypt import Bcrypt # (NUEVO) Para hashear contraseñas
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity #Para tokens de sesión
 from datetime import datetime, timedelta
@@ -18,6 +19,12 @@ DB_URL = 'postgresql://travel_admin:123456@localhost/travel_tour_db'
 app.config['SQLALCHEMY_DATABASE_URI'] = DB_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
+# Configuración de Stripe ---
+# ¡IMPORTANTE! Obtén estas llaves desde tu Dashboard de Stripe (en modo de prueba)
+# NUNCA compartas tu llave secreta real en el código público. Usa variables de entorno.
+app.config['STRIPE_SECRET_KEY'] = 'sk_test_51SQh9EAKHftjDeWfYhabnvaaxzSOsWLs81mut7DIqP59HbX1IDUqGbFxao8Yo0I4b5Zsrdv8EYROCmEK2xzhK12O00PPHzjXcg' 
+app.config['STRIPE_WEBHOOK_SECRET'] = 'whsec_itQIWSUfL8hsUV1Bl5aInmrByU1vmeHD'
+stripe.api_key = app.config['STRIPE_SECRET_KEY']
 
 # Configuración de Seguridad JWT
 # ¡Frase secreta y larga!
@@ -135,7 +142,7 @@ def get_asientos():
         return jsonify({'error': f'Error en el servidor: {str(e)}'}), 500
 
 
-# --- ENDPOINT DE RESERVA  ---
+# --- ENDPOINT DE RESERVA (ACTUALIZADO CON PAGO) ---
 @app.route('/api/reservar', methods=['POST'])
 def crear_reserva():
     data = request.get_json()
@@ -143,7 +150,7 @@ def crear_reserva():
         return jsonify({'error': 'No se enviaron datos JSON'}), 400
 
     corrida_id = data.get('corrida_id')
-    pasajeros_data = data.get('pasajeros') # ej. [{"asiento": 5, "nombre": "Josfel"}, ...]
+    pasajeros_data = data.get('pasajeros')
 
     if not corrida_id or not pasajeros_data:
         return jsonify({'error': 'Faltan datos: corrida_id, pasajeros'}), 400
@@ -151,7 +158,7 @@ def crear_reserva():
     try:
         asientos_solicitados = [p['asiento'] for p in pasajeros_data]
 
-        # --- Lógica de Robustez ---
+        # 1. Verificar que NINGUNO de los asientos solicitados esté ya ocupado
         asientos_ocupados = db.session.query(AsientosReservados.numero_asiento)\
             .join(Reservas)\
             .filter(
@@ -163,44 +170,45 @@ def crear_reserva():
             asientos_ya_tomados = [asiento[0] for asiento in asientos_ocupados]
             return jsonify({'error': 'Asientos no disponibles', 'asientos_ocupados': asientos_ya_tomados}), 409
 
-        # --- Si todo está libre, creamos la reserva ---
-        
-        # 1. Encontrar o crear al Usuario "comprador" (el primer pasajero)
-        #    Esta lógica es simple, en el futuro la mejorarás con un login
-       # 1. Encontrar o crear al Usuario "comprador"...
+        # 2. Encontrar o crear al Usuario "comprador"
         primer_pasajero = pasajeros_data[0]
         usuario = Usuarios.query.filter_by(telefono=primer_pasajero['telefono']).first()
         if not usuario:
-
-            # --- INICIO DE LA CORRECCIÓN ---
-            # Obtenemos el email
             email_pasajero = primer_pasajero.get('email')
-            # Si es una cadena vacía, lo convertimos a None (NULL)
             if email_pasajero == '':
                 email_pasajero = None
-            # --- FIN DE LA CORRECCIÓN ---
-
             usuario = Usuarios(
                 nombre_completo=primer_pasajero['nombre'],
                 telefono=primer_pasajero['telefono'],
-                email=email_pasajero # <-- Usamos la variable corregida
+                email=email_pasajero
             )
             db.session.add(usuario)
-            db.session.flush() # Obtiene el ID del nuevo usuari
-        # 2. Generar un código de reserva único
-        codigo_reserva_nuevo = f"PT-{corrida_id}-{usuario.id}-{datetime.now().timestamp()}"
+            db.session.flush()
+        
+        # 3. Calcular el precio total
+        corrida = Corridas.query.get(corrida_id)
+        if not corrida:
+            return jsonify({'error': 'Corrida no encontrada'}), 404
+        
+        total_a_pagar = corrida.precio * len(asientos_solicitados)
+        # Stripe maneja los precios en centavos (ej. 350.00 MXN = 35000 centavos)
+        total_en_centavos = int(total_a_pagar * 100)
 
-        # 3. Crear el registro de la Reserva "padre"
+        # 4. Generar un código de reserva único
+        codigo_reserva_nuevo = f"PT-{corrida_id}-{usuario.id}-{int(datetime.now().timestamp())}"
+
+        # 5. Crear la Reserva "padre" (aún como 'pendiente')
         nueva_reserva = Reservas(
             codigo_reserva=codigo_reserva_nuevo,
             corrida_id=corrida_id,
-            usuario_id=usuario.id, # El ID del comprador
-            estado_pago='pendiente'
+            usuario_id=usuario.id,
+            estado_pago='pendiente', # ¡Importante!
+            total_pagado=total_a_pagar # Guardamos el total
         )
         db.session.add(nueva_reserva)
         db.session.flush() # Obtiene el ID de la nueva reserva
 
-        # 4. Crear los registros de "AsientosReservados" (hijos)
+        # 6. Crear los "AsientosReservados" (hijos)
         for pasajero in pasajeros_data:
             nuevo_asiento = AsientosReservados(
                 reserva_id=nueva_reserva.id,
@@ -210,25 +218,46 @@ def crear_reserva():
             )
             db.session.add(nuevo_asiento)
 
-        # 5. Confirmar todos los cambios en la base de datos
+      # 7. (CORREGIDO) Construir la URL de éxito ANTES, incluyendo nuestro código
+        #    Usamos concatenación simple para evitar problemas con las llaves de Stripe
+        success_url_template = "http://localhost:3000/pago-exitoso?session_id={CHECKOUT_SESSION_ID}&reserva_code=" + nueva_reserva.codigo_reserva
+
+        # 8. (ACTUALIZADO) Crear la Sesión de Checkout en Stripe
+        checkout_session = stripe.checkout.Session.create(
+            line_items=[{
+                'price_data': {
+                    'currency': 'mxn', 
+                    'product_data': {
+                        'name': f'Boleto(s) Pacífico Tour: {corrida.ruta.origen} a {corrida.ruta.destino}',
+                        'description': f"Asiento(s): {', '.join(map(str, asientos_solicitados))}",
+                    },
+                    'unit_amount': total_en_centavos,
+                },
+                'quantity': 1,
+            }],
+            mode='payment',
+            client_reference_id=nueva_reserva.codigo_reserva, 
+            
+            # --- ¡AQUÍ ESTÁ LA LÍNEA CORREGIDA! ---
+            success_url=success_url_template, # Usamos nuestra URL personalizada
+            
+            cancel_url='http://localhost:3000/pago-cancelado',
+        )
+
+        # 9. Confirmar los cambios en la base de datos (¡AHORA SÍ!)
         db.session.commit()
 
+        # 10. Devolver la URL de pago al frontend
         return jsonify({
-            'message': 'Reserva creada exitosamente',
-            'reserva_id': nueva_reserva.id,
-            'codigo_reserva': nueva_reserva.codigo_reserva
+            'message': 'Sesión de pago creada. Redirigiendo...',
+            'payment_url': checkout_session.url
         }), 201
     except Exception as e:
         db.session.rollback() # Revierte los cambios
-        
-        # --- AÑADE ESTAS LÍNEAS PARA VER EL ERROR ---
         print("\n---ERROR DETALLADO EN /api/reservar---")
-        traceback.print_exc() # Imprime el traceback completo en tu terminal
+        traceback.print_exc()
         print("--------------------------------------------------\n")
-        
-        # Devuelve el error 500
         return jsonify({'error': f'Error en el servidor: {str(e)}'}), 500
-
 # --- ENDPOINT: GENERADOR DE QR ---
 @app.route('/api/ticket/qr/<codigo_reserva>', methods=['GET'])
 def get_ticket_qr(codigo_reserva):
@@ -256,6 +285,60 @@ def get_ticket_qr(codigo_reserva):
     except Exception as e:
         print(f"Error generando QR: {e}")
         return jsonify({'error': 'Error al generar el código QR'}), 500
+# (NUEVO) --- ENDPOINT: WEBHOOK DE PAGOS (STRIPE) ---
+@app.route('/api/pagos/webhook', methods=['POST'])
+def stripe_webhook():
+    payload = request.data
+    sig_header = request.headers.get('Stripe-Signature')
+    event = None
+
+    try:
+        # 1. Verificar que la petición viene de Stripe (usando tu llave secreta del webhook)
+        event = stripe.Webhook.construct_event(
+            payload, sig_header, app.config['STRIPE_WEBHOOK_SECRET']
+        )
+    except ValueError as e:
+        # Payload inválido
+        return jsonify({'error': 'Invalid payload'}), 400
+    except stripe.error.SignatureVerificationError as e:
+        # Firma inválida
+        return jsonify({'error': 'Invalid signature'}), 400
+
+    # 2. Manejar el evento que nos interesa: 'checkout.session.completed'
+    if event['type'] == 'checkout.session.completed':
+        session = event['data']['object']
+        
+        # 3. Recuperar nuestro código de reserva que guardamos en 'client_reference_id'
+        codigo_reserva = session.get('client_reference_id')
+        
+        if codigo_reserva:
+            try:
+                # 4. Encontrar la reserva en nuestra BD
+                reserva = Reservas.query.filter_by(codigo_reserva=codigo_reserva).first()
+                
+                if reserva and reserva.estado_pago == 'pendiente':
+                    # 5. ¡ACTUALIZAR EL ESTADO!
+                    reserva.estado_pago = 'pagado'
+                    # Guardamos el total que Stripe reporta (en centavos / 100)
+                    reserva.total_pagado = session.get('amount_total') / 100.0
+                    db.session.commit()
+                    print(f"ÉXITO: Reserva {codigo_reserva} marcada como 'pagado'.")
+                else:
+                    # La reserva no se encontró o ya estaba pagada
+                    print(f"WARN: Webhook recibió pago para reserva no encontrada o ya pagada: {codigo_reserva}")
+            
+            except Exception as e:
+                db.session.rollback()
+                print(f"--- 💥 ERROR EN WEBHOOK al actualizar BD 💥 ---")
+                traceback.print_exc()
+                print("--------------------------------------------------\n")
+                # Devolvemos 500 para que Stripe reintente
+                return jsonify({'error': 'Error de base de datos'}), 500
+        else:
+            print(f"WARN: Webhook de pago exitoso sin 'client_reference_id' (codigo_reserva).")
+
+    # 6. Devolver 200 OK a Stripe para confirmar que recibimos el evento
+    return jsonify({'status': 'received'}), 200
 
 # --- ENDPOINT: VALIDAR TICKET (PARA EL ADMIN) ---
 @app.route('/api/validar-ticket', methods=['POST'])

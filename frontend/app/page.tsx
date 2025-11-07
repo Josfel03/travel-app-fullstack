@@ -45,7 +45,24 @@ export default function Home() {
     setReservaConfirmada(null);
     setPantalla('inicio');
   };
+// --- (¡¡¡AÑADE ESTA FUNCIÓN!!!) ---
+  // Esta es la función que SÍ sabe cómo actualizar el estado
+  // de forma inmutable (y arregla el bug de "no poder escribir")
+  const handleFormChange = (asiento: number, campo: keyof Pasajero, valor: string) => {
+    setReserva(prevState => {
+      const nuevosPasajeros = new Map(prevState.pasajeros);
+      const pasajeroActual = nuevosPasajeros.get(asiento);
 
+      const pasajeroActualizado = {
+        ...(pasajeroActual || { nombre: '', telefono: '', email: '' }), // Copia lo viejo
+        [campo]: valor // Sobrescribe el campo que cambió
+      };
+      
+      nuevosPasajeros.set(asiento, pasajeroActualizado as Pasajero);
+
+      return { ...prevState, pasajeros: nuevosPasajeros };
+    });
+  };
   // --- Renderizado Condicional ---
   return (
     <div className="bg-brand-light-gray font-sans">
@@ -77,12 +94,13 @@ export default function Home() {
             />
           )}
 
-          {pantalla === 'formulario' && (
+         {pantalla === 'formulario' && (
             <PantallaFormulario
               reserva={reserva}
-              setReserva={setReserva}
-              setPantalla={setPantalla}
-              setReservaConfirmada={setReservaConfirmada}
+              // ¡¡CORRECCIÓN!! Pasamos la nueva función en la prop correcta
+              onFormChange={handleFormChange} 
+              onRegresar={() => setPantalla('asientos')}
+              // (El resto de props ya no son necesarias en el hijo)
             />
           )}
 
