@@ -1,62 +1,43 @@
-from flask import Flask, jsonify, request, send_file # <-- ASEGÚRATE DE IMPORTAR jsonify y request
+from flask import Flask, jsonify, request, send_file
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text
 import sqlalchemy.exc
-from datetime import datetime # 
-from flask_cors import CORS  # <-- 1. IMPORTA ESTO
-import traceback # Para imprimir errores detallados
-import qrcode
-import io 
-import stripe # (NUEVO) Para pagos
-from flask_bcrypt import Bcrypt # (NUEVO) Para hashear contraseñas
-from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity #Para tokens de sesión
 from datetime import datetime, timedelta, timezone
-from fpdf import FPDF
-from flask import Response 
-
-# 1. Crea la instancia de Flask
-app = Flask(__name__)
-import os
 from flask_cors import CORS
+import traceback
+import qrcode
+import io
+import stripe
+from flask_bcrypt import Bcrypt
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+from fpdf import FPDF
+from flask import Response
+import os
+
+app = Flask(__name__)
 
 CORS(app, resources={r"/api/*": {"origins": [
     "http://localhost:3000",
     "https://TU_DOMINIO_FRONTEND.vercel.app"
 ]}})
 
-# --- BASE DE DATOS ---
-# Usa la variable DATABASE_URL que configuraste en Railway
+# Configuración
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv(
     'DATABASE_URL',
     'postgresql://postgres:LEHFoOWFTAGsrAwGoFteTHCUjCBrwmyy@postgres.railway.internal:5432/railway'
 )
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-
-# --- STRIPE CONFIGURACIÓN ---
-# Obtén tus llaves desde el Dashboard de Stripe (modo prueba o live)
-# NUNCA pongas tus llaves reales directamente aquí, solo en Railway
 app.config['STRIPE_SECRET_KEY'] = os.getenv('STRIPE_SECRET_KEY')
 app.config['STRIPE_WEBHOOK_SECRET'] = os.getenv('STRIPE_WEBHOOK_SECRET')
 stripe.api_key = app.config['STRIPE_SECRET_KEY']
-
-
-# --- SEGURIDAD JWT ---
-# Clave secreta larga y segura, también desde variables de entorno
-app.config['JWT_SECRET_KEY'] = os.getenv(
-    'JWT_SECRET_KEY',
-    'clave-fallback-muy-larga-y-dificil-por-si-falta-en-railway'
-)
+app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'clave-fallback-muy-larga')
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
-# --- Inicialización de Extensiones ---
-db = SQLAlchemy()      # Base de datos
-bcrypt = Bcrypt()      # Encriptación de contraseñas
-jwt = JWTManager()     # Manejo de tokens
 
-# Asocia las extensiones con la app Flask
-db.init_app(app)
-bcrypt.init_app(app)
-jwt.init_app(app)
+# Extensiones
+db = SQLAlchemy(app)
+bcrypt = Bcrypt(app)
+jwt = JWTManager(app)
+
 
 # Ruta de prueba de conexion a la db
 @app.route('/api/test')
@@ -69,9 +50,7 @@ def hello_world():
 
 # IMPORTANTE: Importa los modelos DESPUÉS de crear 'db'
 from models import * # Importa todas las clases de models.py
-db.init_app(app)      # Conecta la 'db' con la 'app'
-bcrypt.init_app(app)  # (NUEVO) Conecta bcrypt
-jwt.init_app(app)     # (NUEVO) Conecta jwt
+
 
 # RUTA: para crear las tablas en la BD
 @app.route('/api/create_tables')
