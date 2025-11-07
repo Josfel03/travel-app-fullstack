@@ -36,24 +36,32 @@ app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv(
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['STRIPE_SECRET_KEY'] = os.getenv('STRIPE_SECRET_KEY')
 app.config['STRIPE_WEBHOOK_SECRET'] = os.getenv('STRIPE_WEBHOOK_SECRET')
-stripe.api_key = app.config['STRIPE_SECRET_KEY']
 app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'clave-fallback-muy-larga')
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
 
-# Extensiones
-db = SQLAlchemy(app)
-bcrypt = Bcrypt(app)
-jwt = JWTManager(app)
+# Inicializar extensiones sin la app
+db = SQLAlchemy()
+bcrypt = Bcrypt()
+jwt = JWTManager()
+
+# Luego inicializar con la app
+db.init_app(app)
+bcrypt.init_app(app)
+jwt.init_app(app)
+stripe.api_key = app.config['STRIPE_SECRET_KEY']
 
 
 # Ruta de prueba de conexion a la db
 @app.route('/api/test')
 def hello_world():
     try:
-        db.session.execute(text('SELECT 1')) 
+        # Usar el contexto de la aplicación para operaciones con la base de datos
+        with app.app_context():
+            db.session.execute(text('SELECT 1')) 
         return {'message': 'El backend de Python está CONECTADO a PostgreSQL!'}
     except Exception as e:
         return {'message': f'Error de conexión: {str(e)}'}
+
 
 # IMPORTANTE: Importa los modelos DESPUÉS de crear 'db'
 from models import * # Importa todas las clases de models.py
