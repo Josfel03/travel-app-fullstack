@@ -142,42 +142,69 @@ export default function PantallaAsientos({ reserva, setReserva, setPantalla }: P
 
 
   // --- Renderizado de Asientos (Tu Lógica Anterior Simple) ---
-  const renderAsientos = () => {
-    if (loading) return <p className="text-center">Cargando asientos...</p>;
-    if (asientosInfo.capacidad_total === 0) return <p className="text-center text-brand-alert">No hay asientos disponibles.</p>
+  // --- Renderizado de Asientos tipo Combi ---
+const renderAsientos = () => {
+  if (loading) return <p className="text-center">Cargando asientos...</p>;
+  if (asientosInfo.capacidad_total === 0)
+    return <p className="text-center text-brand-alert">No hay asientos disponibles.</p>;
+
+  const filas = [
+    [1, 3, 6, 9, 12, 15],
+    [2, 4, 7, 10, 13, 16],
+    [5, 8, 11, 14, 18],
+    [20, 19],       // Fila 1 (atrás)
+   
     
-    let asientosLayout = [];
     
-    // Icono del Conductor (Volante)
-    asientosLayout.push(
-      <div key="driver" className="col-start-1 col-span-1 flex items-center justify-center text-gray-400 opacity-50">
-        <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 14m-8 0a8 8 0 1 0 16 0 8 8 0 1 0 -16 0"></path>
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 14m-3 0a3 3 0 1 0 6 0 3 3 0 1 0 -6 0"></path>
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 2v3m0 14v3m-6.4 -14.4l2.4 2.4m8 8l2.4 2.4m-10.4 -8l-2.4 2.4m8 8l-2.4 2.4"></path>
+  ];
+
+  return (
+    <div className="flex flex-col items-center space-y-3">
+      {/* Icono del Conductor */}
+      <div className="flex items-center justify-center text-gray-400 opacity-60 mb-2">
+        <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+            d="M12 14m-8 0a8 8 0 1 0 16 0 8 8 0 1 0 -16 0"></path>
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+            d="M12 14m-3 0a3 3 0 1 0 6 0 3 3 0 1 0 -6 0"></path>
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+            d="M12 2v3m0 14v3"></path>
         </svg>
       </div>
-    );
-    
-    // Dibujamos el resto de asientos en el grid simple
-    for (let i = 1; i <= asientosInfo.capacidad_total; i++) {
-      const isOcupado = asientosInfo.asientos_ocupados.includes(i);
-      const isSeleccionado = reserva.asientos.includes(i);
-      
-      let clasesBoton = `asiento h-12 rounded-lg font-bold text-sm shadow-sm transition-all duration-150 ease-in-out flex items-center justify-center`;
-      
-      if (isOcupado) clasesBoton += ' bg-gray-200 text-gray-400 cursor-not-allowed';
-      else if (isSeleccionado) clasesBoton += ' bg-brand-secondary text-white border-2 border-brand-primary scale-105';
-      else clasesBoton += ' bg-white border-2 border-gray-400 cursor-pointer hover:scale-105 hover:border-brand-secondary';
-      
-      asientosLayout.push(
-        <button key={i} disabled={isOcupado} onClick={() => handleSelectAsiento(i)} className={clasesBoton}>
-          {i}
-        </button>
-      );
-    }
-    return asientosLayout;
-  };
+
+      {/* Asientos por filas */}
+      {filas.map((fila, idx) => (
+        <div key={idx} className="flex justify-center space-x-2">
+          {fila.map((num) => {
+            const isOcupado = asientosInfo.asientos_ocupados.includes(num);
+            const isSeleccionado = reserva.asientos.includes(num);
+            let clases =
+              "w-10 h-10 rounded-md flex items-center justify-center text-sm font-semibold shadow transition-all";
+
+            if (isOcupado) clases += " bg-gray-300 text-gray-500 cursor-not-allowed";
+            else if (isSeleccionado)
+              clases += " bg-brand-secondary text-white border-2 border-brand-primary scale-105";
+            else
+              clases +=
+                " bg-white border-2 border-gray-400 hover:scale-105 hover:border-brand-secondary cursor-pointer";
+
+            return (
+              <button
+                key={num}
+                disabled={isOcupado}
+                onClick={() => handleSelectAsiento(num)}
+                className={clases}
+              >
+                {num}
+              </button>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+};
+
 
   return (
     <section className="pantalla">
@@ -188,21 +215,19 @@ export default function PantallaAsientos({ reserva, setReserva, setPantalla }: P
       <p className="text-center text-gray-600 mb-4">
         {reserva.ruta_nombre} - {reserva.corrida?.hora_salida}
       </p>
-      
-      {/* Mapa Visual de la Van */}
-      <div className="bg-white p-4 rounded-xl shadow-md max-w-xs mx-auto">
-        <div className="text-center font-medium text-gray-500 mb-2">FRENTE (Conductor)</div>
-        <div className="grid grid-cols-4 gap-2 p-4"> {/* Usamos 4 columnas para simplificar */}
+      {/* Mapa Visual de la Combi */}
+        <div className="bg-white p-4 rounded-xl shadow-md max-w-md mx-auto">
+          <div className="text-center font-medium text-gray-500 mb-2">FRENTE (Conductor)</div>
           {renderAsientos()}
+
+          {/* Leyenda */}
+          <div className="flex justify-center space-x-4 mt-6 text-sm">
+            <span className="flex items-center"><div className="w-4 h-4 bg-gray-300 rounded mr-1"></div>Ocupado</span>
+            <span className="flex items-center"><div className="w-4 h-4 bg-brand-secondary rounded mr-1"></div>Seleccionado</span>
+            <span className="flex items-center"><div className="w-4 h-4 border border-gray-400 rounded mr-1"></div>Disponible</span>
+          </div>
         </div>
-        
-        {/* Leyenda */}
-        <div className="flex justify-center space-x-4 mt-4 text-sm">
-          <span className="flex items-center"><div className="w-4 h-4 bg-gray-200 rounded mr-1"></div>Ocupado</span>
-          <span className="flex items-center"><div className="w-4 h-4 bg-brand-secondary text-white rounded mr-1"></div>Seleccionado</span>
-          <span className="flex items-center"><div className="w-4 h-4 border border-gray-400 rounded mr-1"></div>Disponible</span>
-        </div>
-      </div>
+
       
       {/* Resumen y Botón de Confirmar */}
       <div className="mt-6 p-4 bg-white rounded-xl shadow-md">
