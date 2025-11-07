@@ -920,6 +920,5 @@ def get_manifiesto(corrida_id):
         print("--------------------------------------------------\n")
         return jsonify({'error': f'Error en el servidor: {str(e)}'}), 500
     
-# Correrlo en modo desarrollo
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0') # <-- ¡CORRECCIÓN AQUÍ!
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
