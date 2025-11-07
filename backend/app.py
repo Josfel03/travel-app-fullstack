@@ -848,6 +848,60 @@ def bloquear_asientos():
         traceback.print_exc()
         print("--------------------------------------------------\n")
         return jsonify({'error': f'Error en el servidor: {str(e)}'}), 500
+
+# (NUEVO) --- ENDPOINT: MANIFIESTO DE PASAJEROS ---
+@app.route('/api/admin/manifiesto/<int:corrida_id>', methods=['GET'])
+@jwt_required()
+def get_manifiesto(corrida_id):
+    # Verificamos que sea un admin
+    current_user_phone = get_jwt_identity()
+    usuario = Usuarios.query.filter_by(telefono=current_user_phone).first()
+    
+    if not usuario or usuario.rol != 'admin':
+        return jsonify({'error': 'Acceso no autorizado'}), 403
+
+    try:
+        # 1. Buscamos la corrida para obtener los detalles del viaje
+        corrida = Corridas.query.get(corrida_id)
+        if not corrida:
+            return jsonify({'error': 'Corrida no encontrada'}), 404
+        
+        # 2. Buscamos todos los asientos que fueron PAGADOS para esta corrida
+        manifiesto_db = db.session.query(AsientosReservados)\
+            .join(Reservas)\
+            .filter(
+                Reservas.corrida_id == corrida_id,
+                Reservas.estado_pago == 'pagado' # ¡Solo boletos pagados!
+            )\
+            .order_by(AsientosReservados.numero_asiento.asc())\
+            .all()
+
+        # 3. Formateamos la lista de pasajeros
+        pasajeros_lista = []
+        for asiento_reservado in manifiesto_db:
+            pasajeros_lista.append({
+                'asiento': asiento_reservado.numero_asiento,
+                'nombre': asiento_reservado.nombre_pasajero,
+                'telefono': asiento_reservado.telefono_pasajero,
+                'reserva_codigo': asiento_reservado.reserva.codigo_reserva
+            })
+
+        # 4. Devolvemos el manifiesto completo
+        return jsonify({
+            'corrida_id': corrida_id,
+            'ruta': f"{corrida.ruta.origen} → {corrida.ruta.destino}",
+            'fecha_hora': corrida.fecha_hora_salida.strftime('%Y-%m-%d %I:%M %p'),
+            'total_pasajeros': len(pasajeros_lista),
+            'manifiesto': pasajeros_lista
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        print("\n--- 💥 ERROR DETALLADO EN /api/admin/manifiesto 💥 ---")
+        traceback.print_exc()
+        print("--------------------------------------------------\n")
+        return jsonify({'error': f'Error en el servidor: {str(e)}'}), 500
+    
 # Correrlo en modo desarrollo
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0') # <-- ¡CORRECCIÓN AQUÍ!

@@ -38,6 +38,11 @@ function Sidebar({ activePath, onLogout }: { activePath: string, onLogout: () =>
           <i className="fas fa-qrcode mr-2 w-5 text-center"></i>
           Validar Ticket
         </Link>
+        {/* Enlace 4: Manifiesto */}
+        <Link href="/admin/manifiesto" className={`block w-full text-left p-3 rounded-lg ${linkClass('/admin/manifiesto')}`}>
+          <i className="fas fa-users mr-2 w-5 text-center"></i>
+          Manifiesto de Pasajeros
+        </Link>
       </nav>
       
       {/* Botón de Cerrar Sesión */}
