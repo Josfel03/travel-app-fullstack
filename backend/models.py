@@ -80,5 +80,11 @@ class AsientosReservados(db.Model):
     reserva_id = db.Column(db.Integer, db.ForeignKey('reservas.id'), nullable=False)
     numero_asiento = db.Column(db.Integer, nullable=False)
 
+    # --- CAMPOS NUEVOS ---
+    # Aquí es donde guardamos los datos del formulario de cada pasajero
+    nombre_pasajero = db.Column(db.String(100), nullable=False)
+    telefono_pasajero = db.Column(db.String(20), nullable=True) # Puede ser opcional, asumiendo que el del comprador es el principal
+
     def __repr__(self):
-        return f'<Asiento {self.numero_asiento} en Reserva {self.reserva_id}>'
+        # Actualizamos esto para que sea más útil al depurar
+        return f'<Asiento {self.numero_asiento} - {self.nombre_pasajero}>'

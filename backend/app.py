@@ -1,8 +1,11 @@
-from flask import Flask, jsonify, request # <-- ASEGÚRATE DE IMPORTAR jsonify y request
+from flask import Flask, jsonify, request, send_file # <-- ASEGÚRATE DE IMPORTAR jsonify y request
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text
 from datetime import datetime # 
 from flask_cors import CORS  # <-- 1. IMPORTA ESTO
+import traceback # Para imprimir errores detallados
+import qrcode
+import io 
 # 1. Crea la instancia de Flask
 app = Flask(__name__)
 # Permite que 'http://localhost:3000' (tu React) haga peticiones a tu API
@@ -12,11 +15,11 @@ DB_URL = 'postgresql://travel_admin:123456@localhost/travel_tour_db'
 app.config['SQLALCHEMY_DATABASE_URI'] = DB_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# 3. Inicializa SQLAlchemy (¡PERO SIN LA APP!)
+# 3. Inicializa SQLAlchemy
 #    Esto nos permite importar 'db' en otros archivos
-db = SQLAlchemy() 
+db = db = SQLAlchemy()
 
-# 4. Ruta de prueba (Sigue igual)
+# Ruta de prueba de conexion a la db
 @app.route('/api/test')
 def hello_world():
     try:
@@ -25,10 +28,11 @@ def hello_world():
     except Exception as e:
         return {'message': f'Error de conexión: {str(e)}'}
 
-# 5. IMPORTANTE: Importa los modelos DESPUÉS de crear 'db'
+# IMPORTANTE: Importa los modelos DESPUÉS de crear 'db'
 from models import * # Importa todas las clases de models.py
 db.init_app(app)      # Conecta la 'db' con la 'app'
-# 5. NUEVA RUTA: para crear las tablas en la BD
+
+# RUTA: para crear las tablas en la BD
 @app.route('/api/create_tables')
 def create_tables():
     try:
@@ -39,7 +43,8 @@ def create_tables():
         return {'message': 'Tablas creadas exitosamente!'}
     except Exception as e:
         return {'message': f'Error al crear tablas: {str(e)}'}
-# --- NUEVO ENDPOINT: OBTENER CORRIDAS ---
+    
+# ---ENDPOINT: OBTENER CORRIDAS ---
 @app.route('/api/corridas', methods=['GET'])
 def get_corridas():
     # 1. Obtener los parámetros de la URL (ej. ?ruta_id=1&fecha=2025-11-10)
@@ -77,7 +82,8 @@ def get_corridas():
 
     except Exception as e:
         return jsonify({'error': f'Error en el servidor: {str(e)}'}), 500
-# --- NUEVO ENDPOINT: OBTENER ASIENTOS OCUPADOS ---
+    
+# --- ENDPOINT: OBTENER ASIENTOS OCUPADOS ---
 @app.route('/api/asientos', methods=['GET'])
 def get_asientos():
     # 1. Obtener el ID de la corrida de la URL (ej. ?corrida_id=1)
@@ -114,24 +120,25 @@ def get_asientos():
 
     except Exception as e:
         return jsonify({'error': f'Error en el servidor: {str(e)}'}), 500
-# --- NUEVO ENDPOINT: CREAR RESERVA ---
+
+
+# --- ENDPOINT DE RESERVA  ---
 @app.route('/api/reservar', methods=['POST'])
 def crear_reserva():
-    # 1. Obtener los datos JSON que envía el frontend
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No se enviaron datos JSON'}), 400
 
     corrida_id = data.get('corrida_id')
-    usuario_id = data.get('usuario_id') # Por ahora lo pasamos directo
-    asientos_solicitados = data.get('asientos') # ej. [5, 6, 7]
+    pasajeros_data = data.get('pasajeros') # ej. [{"asiento": 5, "nombre": "Josfel"}, ...]
 
-    if not corrida_id or not usuario_id or not asientos_solicitados:
-        return jsonify({'error': 'Faltan datos: corrida_id, usuario_id, asientos'}), 400
+    if not corrida_id or not pasajeros_data:
+        return jsonify({'error': 'Faltan datos: corrida_id, pasajeros'}), 400
 
     try:
+        asientos_solicitados = [p['asiento'] for p in pasajeros_data]
+
         # --- Lógica de Robustez ---
-        # 2. Verificar que NINGUNO de los asientos solicitados esté ya ocupado
         asientos_ocupados = db.session.query(AsientosReservados.numero_asiento)\
             .join(Reservas)\
             .filter(
@@ -140,48 +147,165 @@ def crear_reserva():
             ).all()
 
         if asientos_ocupados:
-            # asientos_ocupados será [(5,), (6,)]
             asientos_ya_tomados = [asiento[0] for asiento in asientos_ocupados]
-            return jsonify({'error': 'Asientos no disponibles', 'asientos_ocupados': asientos_ya_tomados}), 409 # 409 Conflict
+            return jsonify({'error': 'Asientos no disponibles', 'asientos_ocupados': asientos_ya_tomados}), 409
 
         # --- Si todo está libre, creamos la reserva ---
         
-        # 3. Generar un código de reserva único (para el QR)
-        #    (Versión simple, en un futuro lo harás más robusto)
-        codigo_reserva_nuevo = f"PT-{corrida_id}-{usuario_id}-{asientos_solicitados[0]}"
+        # 1. Encontrar o crear al Usuario "comprador" (el primer pasajero)
+        #    Esta lógica es simple, en el futuro la mejorarás con un login
+       # 1. Encontrar o crear al Usuario "comprador"...
+        primer_pasajero = pasajeros_data[0]
+        usuario = Usuarios.query.filter_by(telefono=primer_pasajero['telefono']).first()
+        if not usuario:
 
-        # 4. Crear el registro de la Reserva "padre"
+            # --- INICIO DE LA CORRECCIÓN ---
+            # Obtenemos el email
+            email_pasajero = primer_pasajero.get('email')
+            # Si es una cadena vacía, lo convertimos a None (NULL)
+            if email_pasajero == '':
+                email_pasajero = None
+            # --- FIN DE LA CORRECCIÓN ---
+
+            usuario = Usuarios(
+                nombre_completo=primer_pasajero['nombre'],
+                telefono=primer_pasajero['telefono'],
+                email=email_pasajero # <-- Usamos la variable corregida
+            )
+            db.session.add(usuario)
+            db.session.flush() # Obtiene el ID del nuevo usuari
+        # 2. Generar un código de reserva único
+        codigo_reserva_nuevo = f"PT-{corrida_id}-{usuario.id}-{datetime.now().timestamp()}"
+
+        # 3. Crear el registro de la Reserva "padre"
         nueva_reserva = Reservas(
             codigo_reserva=codigo_reserva_nuevo,
             corrida_id=corrida_id,
-            usuario_id=usuario_id,
-            estado_pago='pendiente' # El pago se maneja después
+            usuario_id=usuario.id, # El ID del comprador
+            estado_pago='pendiente'
         )
         db.session.add(nueva_reserva)
-        # Es crucial hacer 'flush' para obtener el ID de la nueva reserva
-        db.session.flush()
+        db.session.flush() # Obtiene el ID de la nueva reserva
 
-        # 5. Crear los registros de "AsientosReservados" (hijos)
-        for asiento_num in asientos_solicitados:
+        # 4. Crear los registros de "AsientosReservados" (hijos)
+        for pasajero in pasajeros_data:
             nuevo_asiento = AsientosReservados(
                 reserva_id=nueva_reserva.id,
-                numero_asiento=asiento_num
+                numero_asiento=pasajero['asiento'],
+                nombre_pasajero=pasajero['nombre'],
+                telefono_pasajero=pasajero['telefono']
             )
             db.session.add(nuevo_asiento)
 
-        # 6. Confirmar todos los cambios en la base de datos
+        # 5. Confirmar todos los cambios en la base de datos
         db.session.commit()
 
         return jsonify({
             'message': 'Reserva creada exitosamente',
             'reserva_id': nueva_reserva.id,
             'codigo_reserva': nueva_reserva.codigo_reserva
-        }), 201 # 201 Created
+        }), 201
+    except Exception as e:
+        db.session.rollback() # Revierte los cambios
+        
+        # --- AÑADE ESTAS LÍNEAS PARA VER EL ERROR ---
+        print("\n---ERROR DETALLADO EN /api/reservar---")
+        traceback.print_exc() # Imprime el traceback completo en tu terminal
+        print("--------------------------------------------------\n")
+        
+        # Devuelve el error 500
+        return jsonify({'error': f'Error en el servidor: {str(e)}'}), 500
+
+# --- ENDPOINT: GENERADOR DE QR ---
+@app.route('/api/ticket/qr/<codigo_reserva>', methods=['GET'])
+def get_ticket_qr(codigo_reserva):
+    try:
+        # Genera la imagen del QR en memoria
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=10,
+            border=4,
+        )
+        qr.add_data(codigo_reserva) # El QR solo contendrá el código
+        qr.make(fit=True)
+
+        img = qr.make_image(fill_color="black", back_color="white")
+        
+        # Crea un "buffer" en memoria para guardar la imagen
+        buf = io.BytesIO()
+        img.save(buf, format='PNG')
+        buf.seek(0) # Regresa al inicio del buffer
+        
+        # Envía el buffer como un archivo de imagen
+        return send_file(buf, mimetype='image/png')
 
     except Exception as e:
-        db.session.rollback() # Revertir cambios si algo falla
-        return jsonify({'error': f'Error en el servidor: {str(e)}'}), 500
+        print(f"Error generando QR: {e}")
+        return jsonify({'error': 'Error al generar el código QR'}), 500
+
+# --- ENDPOINT: VALIDAR TICKET (PARA EL ADMIN) ---
+@app.route('/api/validar-ticket', methods=['POST'])
+def validar_ticket():
+    data = request.get_json()
+    if not data or 'codigo_reserva' not in data:
+        return jsonify({'error': 'Falta el codigo_reserva'}), 400
+
+    codigo = data['codigo_reserva']
+
+    try:
+        # 1. Buscar la reserva en la base de datos
+        reserva = Reservas.query.filter_by(codigo_reserva=codigo).first()
+
+        # 2. Si no existe, es un boleto falso
+        if not reserva:
+            return jsonify({
+                'status': 'invalido',
+                'error': 'Boleto no encontrado. Código inválido.'
+            }), 404 # 404 Not Found
+
+        # 3. (A FUTURO) Aquí es donde checaríamos el pago
+        if reserva.estado_pago != 'pagado':
+             # Por ahora, solo lo marcamos como 'pendiente', pero no lo invalidamos
+             pass # En un futuro, esto podría ser un error.
+
+        # 4. (A FUTURO) Aquí checaríamos si ya se usó
+        #    Necesitaríamos una nueva columna en 'Reservas' ej. 'estado_viaje'
+        # if reserva.estado_viaje == 'abordado':
+        #     return jsonify({
+        #         'status': 'invalido',
+        #         'error': f'Este boleto ya fue escaneado.'
+        #     }), 409 # 409 Conflict
+
         
-# 6. Esto es para correrlo en modo desarrollo
+        # 5. Si existe y (por ahora) es válido, buscamos los detalles
+        corrida = Corridas.query.get(reserva.corrida_id)
+        
+        # Obtenemos todos los pasajeros de esta reserva
+        pasajeros_db = AsientosReservados.query.filter_by(reserva_id=reserva.id).all()
+        
+        pasajeros_lista = []
+        for p in pasajeros_db:
+            pasajeros_lista.append({
+                'nombre': p.nombre_pasajero,
+                'asiento': p.numero_asiento
+            })
+
+        # ¡Éxito! Devolvemos los detalles del boleto
+        return jsonify({
+            'status': 'valido',
+            'ruta': f"{corrida.ruta.origen} → {corrida.ruta.destino}",
+            'salida': corrida.fecha_hora_salida.strftime('%Y-%m-%d a las %I:%M %p'),
+            'codigo_reserva': reserva.codigo_reserva,
+            'pasajeros': pasajeros_lista
+        })
+
+    except Exception as e:
+        print("\n---ERROR DETALLADO EN /api/validar-ticket---")
+        traceback.print_exc()
+        print("--------------------------------------------------\n")
+        return jsonify({'error': f'Error en el servidor: {str(e)}'}), 500
+
+# Correrlo en modo desarrollo
 if __name__ == '__main__':
     app.run(debug=True)
