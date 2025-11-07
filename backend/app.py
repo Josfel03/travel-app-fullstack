@@ -16,10 +16,17 @@ import os
 
 app = Flask(__name__)
 
-CORS(app, resources={r"/api/*": {"origins": [
-    "http://localhost:3000",
-    "https://TU_DOMINIO_FRONTEND.vercel.app"
-]}})
+# MEJORAR la configuración de CORS:
+CORS(app, resources={
+    r"/api/*": {
+        "origins": [
+            "http://localhost:3000",
+            "https://TU_DOMINIO_FRONTEND.vercel.app"
+        ],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    }
+})
 
 # Configuración
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv(
@@ -65,42 +72,40 @@ def create_tables():
         return {'message': f'Error al crear tablas: {str(e)}'}
     
 # ---ENDPOINT: OBTENER CORRIDAS ---
+# CORREGIR en /api/corridas:
 @app.route('/api/corridas', methods=['GET'])
 def get_corridas():
-    # 1. Obtener los parámetros de la URL (ej. ?ruta_id=1&fecha=2025-11-10)
     ruta_id = request.args.get('ruta_id')
-    fecha_str = request.args.get('fecha') # Recibe la fecha como texto
+    fecha_str = request.args.get('fecha')
 
-    # --- Validación básica (en un futuro la harás más robusta) ---
     if not ruta_id or not fecha_str:
         return jsonify({'error': 'Faltan parámetros: se requiere ruta_id y fecha'}), 400
 
     try:
-       # 2. Convertir la fecha de texto a un objeto 'date' de Python
         fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
-
-        # 3. (BLOQUE MODIFICADO) Construir la consulta a la base de datos
-        #    Obtenemos la hora actual (en UTC, asumiendo que el servidor está en UTC)
-        #    Si tu servidor está en hora local, usa datetime.now()
-        # La nueva línea (robusta):
+        
+        # CORRECCIÓN: Manejo robusto de timezone
         ahora = datetime.now(timezone.utc)
+        
         corridas = Corridas.query.filter(
             Corridas.ruta_id == ruta_id,
             db.func.date(Corridas.fecha_hora_salida) == fecha,
-            Corridas.fecha_hora_salida > ahora # <-- ¡AQUÍ ESTÁ LA LÓGICA DE ROBUSTEZ!
-        ).order_by(Corridas.fecha_hora_salida.asc()).all() # (Opcional: ordenar por hora)
-        # 4. Convertir los resultados a un formato JSON que React entienda
+            Corridas.fecha_hora_salida > ahora
+        ).order_by(Corridas.fecha_hora_salida.asc()).all()
+        
         lista_corridas = []
         for corrida in corridas:
             lista_corridas.append({
                 'id': corrida.id,
-                'hora_salida': corrida.fecha_hora_salida.strftime('%I:%M %p'), # ej. "06:00 AM"
-                'precio': str(corrida.precio), # Convertir de Decimal a string
+                'hora_salida': corrida.fecha_hora_salida.strftime('%I:%M %p'),
+                'precio': str(corrida.precio),
                 'capacidad': corrida.capacidad_total
             })
         
         return jsonify(lista_corridas)
 
+    except ValueError as e:
+        return jsonify({'error': 'Formato de fecha inválido. Use YYYY-MM-DD'}), 400
     except Exception as e:
         return jsonify({'error': f'Error en el servidor: {str(e)}'}), 500
     
@@ -898,13 +903,9 @@ def get_manifiesto(corrida_id):
         traceback.print_exc()
         print("--------------------------------------------------\n")
         return jsonify({'error': f'Error en el servidor: {str(e)}'}), 500
-from models import *
 
-with app.app_context():
-    db.create_all()
-    print("✅ Tablas creadas exitosamente si no existían.")
 
-    
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))  # Usa el puerto asignado o 8000 por defecto
