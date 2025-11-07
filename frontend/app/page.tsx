@@ -1,9 +1,8 @@
-"use client"; // Muy importante: le dice a Next.js que esto es un componente de cliente
+"use client"; 
 
 import { useState, useEffect } from 'react';
 
 // --- Definición de Tipos (¡Gracias, TypeScript!) ---
-// La "forma" de los datos que esperamos de la API
 interface Corrida {
   id: number;
   hora_salida: string;
@@ -22,45 +21,50 @@ interface ReservaConfirmada {
   codigo_reserva: string;
 }
 
-// --- Estado de la Reserva ---
-// Un solo objeto para guardar todas las selecciones del usuario
-interface ReservaState {
-  ruta_id: number | null; // 1 para CH->CDMX, 2 para CDMX->CH
-  ruta_nombre: string;
-  fecha: string;
-  corrida: Corrida | null;
-  asientos: number[];
+// --- NUEVA ESTRUCTURA PARA CADA PASAJERO ---
+interface Pasajero {
   nombre: string;
   telefono: string;
   email: string;
 }
 
-// --- Estado Inicial ---
-const estadoInicialReserva: ReservaState = {
-  ruta_id: null,
-  ruta_nombre: '',
-  fecha: new Date().toISOString().split('T')[0], // Pone la fecha de hoy por defecto
-  corrida: null,
-  asientos: [],
+// --- Estado de la Reserva (Actualizado) ---
+interface ReservaState {
+  ruta_id: number | null; 
+  ruta_nombre: string;
+  fecha: string;
+  corrida: Corrida | null;
+  asientos: number[]; // Sigue siendo la lista de números [5, 6]
+  pasajeros: Map<number, Pasajero>; // Un "mapa" que liga un Asiento (ej. 5) a un Pasajero
+}
+
+// --- Estado Inicial (Actualizado) ---
+const estadoInicialPasajero: Pasajero = {
   nombre: '',
   telefono: '',
   email: '',
 };
 
+const estadoInicialReserva: ReservaState = {
+  ruta_id: null,
+  ruta_nombre: '',
+  fecha: new Date().toISOString().split('T')[0],
+  corrida: null,
+  asientos: [],
+  pasajeros: new Map(), // Inicia como un mapa vacío
+};
+
 // --- Componente Principal ---
 export default function Home() {
-  // --- Estados de React ---
-  const [pantalla, setPantalla] = useState('inicio'); // 'inicio', 'horarios', 'asientos', 'formulario', 'confirmacion'
+  const [pantalla, setPantalla] = useState('inicio');
   const [reserva, setReserva] = useState<ReservaState>(estadoInicialReserva);
   const [reservaConfirmada, setReservaConfirmada] = useState<ReservaConfirmada | null>(null);
 
-  // Función para manejar la selección de ruta
   const handleSelectRuta = (id: number, nombre: string) => {
     setReserva(prev => ({ ...prev, ruta_id: id, ruta_nombre: nombre }));
     setPantalla('horarios');
   };
 
-  // Función para volver al inicio y reiniciar todo
   const irAlInicio = () => {
     setReserva(estadoInicialReserva);
     setReservaConfirmada(null);
@@ -68,7 +72,6 @@ export default function Home() {
   };
 
   // --- Renderizado Condicional ---
-  // Muestra un componente u otro basado en el estado 'pantalla'
   return (
     <div className="bg-brand-light-gray font-sans">
       <div className="container mx-auto max-w-lg p-4 min-h-screen flex flex-col">
@@ -126,14 +129,12 @@ export default function Home() {
 }
 
 // ===========================================
-// --- PANTALLA 1: INICIO ---
+// --- PANTALLA 1: INICIO (Sin cambios) ---
 // ===========================================
 function PantallaInicio({ onSelectRuta }: { onSelectRuta: (id: number, nombre: string) => void }) {
   return (
     <section className="pantalla space-y-4">
       <h2 className="text-xl font-semibold text-center text-gray-800">¿A dónde viajas hoy?</h2>
-      
-      {/* TODO: Estos IDs de ruta (1 y 2) deben venir de tu API de Rutas en el futuro */}
       <button 
         onClick={() => onSelectRuta(1, 'Chilpancingo → CDMX')}
         className="btn-ruta w-full text-left p-4 bg-white rounded-xl shadow-md flex items-center justify-between transition duration-300 hover:shadow-lg hover:bg-blue-50"
@@ -144,7 +145,6 @@ function PantallaInicio({ onSelectRuta }: { onSelectRuta: (id: number, nombre: s
         </div>
         <i className="fas fa-chevron-right text-brand-primary text-xl"></i>
       </button>
-      
       <button 
         onClick={() => onSelectRuta(2, 'CDMX → Chilpancingo')}
         className="btn-ruta w-full text-left p-4 bg-white rounded-xl shadow-md flex items-center justify-between transition duration-300 hover:shadow-lg hover:bg-blue-50"
@@ -160,23 +160,21 @@ function PantallaInicio({ onSelectRuta }: { onSelectRuta: (id: number, nombre: s
 }
 
 // ===========================================
-// --- PANTALLA 2: HORARIOS ---
+// --- PANTALLA 2: HORARIOS (Sin cambios) ---
 // ===========================================
 function PantallaHorarios({ reserva, setReserva, setPantalla }: any) {
   const [corridas, setCorridas] = useState<Corrida[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // --- useEffect: Se ejecuta cuando el componente carga o la fecha/ruta cambia ---
   useEffect(() => {
     const fetchCorridas = async () => {
       setLoading(true);
       setError('');
       try {
+        // Asegúrate que tu backend (Flask) esté corriendo en el puerto 5000
         const res = await fetch(`http://localhost:5000/api/corridas?ruta_id=${reserva.ruta_id}&fecha=${reserva.fecha}`);
-        if (!res.ok) {
-          throw new Error('No se pudieron cargar las corridas');
-        }
+        if (!res.ok) throw new Error('No se pudieron cargar las corridas');
         const data: Corrida[] = await res.json();
         setCorridas(data);
       } catch (err: any) {
@@ -185,12 +183,13 @@ function PantallaHorarios({ reserva, setReserva, setPantalla }: any) {
         setLoading(false);
       }
     };
-
-    fetchCorridas();
-  }, [reserva.ruta_id, reserva.fecha]); // Se vuelve a ejecutar si la ruta o fecha cambian
+    if (reserva.ruta_id) {
+      fetchCorridas();
+    }
+  }, [reserva.ruta_id, reserva.fecha]); 
 
   const handleSelectCorrida = (corrida: Corrida) => {
-    setReserva((prev: ReservaState) => ({ ...prev, corrida: corrida }));
+    setReserva((prev: ReservaState) => ({ ...prev, corrida: corrida, asientos: [], pasajeros: new Map() })); // Resetea asientos y pasajeros
     setPantalla('asientos');
   };
 
@@ -202,7 +201,6 @@ function PantallaHorarios({ reserva, setReserva, setPantalla }: any) {
       <h2 className="text-xl font-semibold text-center text-gray-800">Elige un horario</h2>
       <p className="text-center text-gray-600">{reserva.ruta_nombre}</p>
 
-      {/* --- EL CALENDARIO QUE FALTABA --- */}
       <div className="py-2">
         <label htmlFor="fecha" className="block text-sm font-medium text-gray-700">Selecciona una fecha</label>
         <input 
@@ -220,7 +218,6 @@ function PantallaHorarios({ reserva, setReserva, setPantalla }: any) {
         {!loading && !error && corridas.length === 0 && (
           <p className="text-center text-gray-500">No hay corridas disponibles para esta fecha.</p>
         )}
-        
         {corridas.map(corrida => (
           <button 
             key={corrida.id}
@@ -238,13 +235,12 @@ function PantallaHorarios({ reserva, setReserva, setPantalla }: any) {
 }
 
 // ===========================================
-// --- PANTALLA 3: ASIENTOS ---
+// --- PANTALLA 3: ASIENTOS (ACTUALIZADO) ---
 // ===========================================
 function PantallaAsientos({ reserva, setReserva, setPantalla }: any) {
   const [asientosInfo, setAsientosInfo] = useState<AsientosInfo>({ capacidad_total: 0, asientos_ocupados: [] });
   const [loading, setLoading] = useState(true);
 
-  // --- useEffect: Carga los asientos de la corrida seleccionada ---
   useEffect(() => {
     const fetchAsientos = async () => {
       setLoading(true);
@@ -253,52 +249,42 @@ function PantallaAsientos({ reserva, setReserva, setPantalla }: any) {
       setAsientosInfo(data);
       setLoading(false);
     };
-
-    if (reserva.corrida) {
-      fetchAsientos();
-    }
+    if (reserva.corrida) fetchAsientos();
   }, [reserva.corrida]);
 
-  // --- Lógica de selección múltiple ---
+  // --- Lógica de selección múltiple (ACTUALIZADA) ---
   const handleSelectAsiento = (numAsiento: number) => {
     setReserva((prev: ReservaState) => {
-      const asientos = prev.asientos;
-      if (asientos.includes(numAsiento)) {
+      const nuevosAsientos = [...prev.asientos];
+      const nuevosPasajeros = new Map(prev.pasajeros);
+
+      if (nuevosAsientos.includes(numAsiento)) {
         // Si ya está, quitarlo
-        return { ...prev, asientos: asientos.filter(a => a !== numAsiento) };
+        const index = nuevosAsientos.indexOf(numAsiento);
+        nuevosAsientos.splice(index, 1);
+        nuevosPasajeros.delete(numAsiento); // Elimina el pasajero del mapa
       } else {
         // Si no está, añadirlo
-        return { ...prev, asientos: [...asientos, numAsiento] };
+        nuevosAsientos.push(numAsiento);
+        nuevosPasajeros.set(numAsiento, { ...estadoInicialPasajero }); // Añade un pasajero vacío
       }
+
+      return { ...prev, asientos: nuevosAsientos, pasajeros: nuevosPasajeros };
     });
   };
 
   const renderAsientos = () => {
     if (loading) return <p className="text-center">Cargando asientos...</p>;
-
     let asientosLayout = [];
     for (let i = 1; i <= asientosInfo.capacidad_total; i++) {
       const isOcupado = asientosInfo.asientos_ocupados.includes(i);
       const isSeleccionado = reserva.asientos.includes(i);
-
-      let clasesBoton = `asiento h-12 rounded-lg font-bold text-sm shadow-sm
-                         transition-all duration-150 ease-in-out flex items-center justify-center`;
-      
-      if (isOcupado) {
-        clasesBoton += ' bg-gray-200 text-gray-400 cursor-not-allowed';
-      } else if (isSeleccionado) {
-        clasesBoton += ' bg-brand-secondary text-white border-2 border-brand-primary scale-105';
-      } else {
-        clasesBoton += ' bg-white border-2 border-gray-400 cursor-pointer hover:scale-105 hover:border-brand-secondary';
-      }
-
+      let clasesBoton = `asiento h-12 rounded-lg font-bold text-sm shadow-sm transition-all duration-150 ease-in-out flex items-center justify-center`;
+      if (isOcupado) clasesBoton += ' bg-gray-200 text-gray-400 cursor-not-allowed';
+      else if (isSeleccionado) clasesBoton += ' bg-brand-secondary text-white border-2 border-brand-primary scale-105';
+      else clasesBoton += ' bg-white border-2 border-gray-400 cursor-pointer hover:scale-105 hover:border-brand-secondary';
       asientosLayout.push(
-        <button
-          key={i}
-          disabled={isOcupado}
-          onClick={() => !isOcupado && handleSelectAsiento(i)}
-          className={clasesBoton}
-        >
+        <button key={i} disabled={isOcupado} onClick={() => !isOcupado && handleSelectAsiento(i)} className={clasesBoton}>
           {i}
         </button>
       );
@@ -315,27 +301,19 @@ function PantallaAsientos({ reserva, setReserva, setPantalla }: any) {
       <p className="text-center text-gray-600 mb-4">
         {reserva.ruta_nombre} - {reserva.corrida?.hora_salida}
       </p>
-
       <div className="bg-white p-4 rounded-xl shadow-md max-w-xs mx-auto">
         <div className="text-center font-medium text-gray-500 mb-2">FRENTE (Conductor)</div>
-        
-        {/* Usamos grid-cols-4 para el layout simple, ¡puedes mejorarlo! */}
-        <div className="grid grid-cols-4 gap-2 p-4">
-          {renderAsientos()}
-        </div>
-
+        <div className="grid grid-cols-4 gap-2 p-4">{renderAsientos()}</div>
         <div className="flex justify-center space-x-4 mt-4 text-sm">
           <span className="flex items-center"><div className="w-4 h-4 bg-gray-200 rounded mr-1"></div>Ocupado</span>
           <span className="flex items-center"><div className="w-4 h-4 bg-brand-secondary text-white rounded mr-1"></div>Seleccionado</span>
           <span className="flex items-center"><div className="w-4 h-4 border border-gray-400 rounded mr-1"></div>Disponible</span>
         </div>
       </div>
-
       <button 
-        id="btn-confirmar-asiento" 
         onClick={() => setPantalla('formulario')}
         className="w-full mt-6 bg-brand-primary text-white font-bold py-3 rounded-xl shadow-lg transition hover:bg-opacity-90 disabled:opacity-50"
-        disabled={reserva.asientos.length === 0} // Deshabilitado si no hay asientos
+        disabled={reserva.asientos.length === 0}
       >
         Confirmar {reserva.asientos.length} Asiento(s)
       </button>
@@ -344,18 +322,23 @@ function PantallaAsientos({ reserva, setReserva, setPantalla }: any) {
 }
 
 // ===========================================
-// --- PANTALLA 4: FORMULARIO ---
+// --- PANTALLA 4: FORMULARIO (ACTUALIZADO) ---
 // ===========================================
 function PantallaFormulario({ reserva, setReserva, setPantalla, setReservaConfirmada }: any) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // --- NUEVA LÓGICA: Maneja el cambio en un formulario de pasajero específico ---
+  const handlePasajeroChange = (asientoNum: number, e: React.ChangeEvent<HTMLInputElement>) => {
     const { id, value } = e.target;
-    setReserva((prev: ReservaState) => ({
-      ...prev,
-      [id]: value
-    }));
+    setReserva((prev: ReservaState) => {
+      const nuevosPasajeros = new Map(prev.pasajeros);
+      const pasajero = nuevosPasajeros.get(asientoNum);
+      if (pasajero) {
+        nuevosPasajeros.set(asientoNum, { ...pasajero, [id]: value });
+      }
+      return { ...prev, pasajeros: nuevosPasajeros };
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -363,14 +346,17 @@ function PantallaFormulario({ reserva, setReserva, setPantalla, setReservaConfir
     setLoading(true);
     setError('');
 
-    // TODO: Falta un sistema de login. Por ahora, asumimos que el usuario_id=1
-    // (el que creamos en la base de datos)
+    // --- NUEVO PAYLOAD: Convierte el Mapa a una lista que el backend entienda ---
+    const pasajerosArray = [...reserva.pasajeros.entries()].map(([asiento, data]) => ({
+      asiento: asiento,
+      nombre: data.nombre,
+      telefono: data.telefono,
+      email: data.email
+    }));
+
     const payload = {
       corrida_id: reserva.corrida.id,
-      usuario_id: 1, // REQUERIRÁ AUTENTICACIÓN EN EL FUTURO
-      asientos: reserva.asientos,
-      // Aquí también irían los datos de nombre, telefono, etc.
-      // para crear el usuario si no existe.
+      pasajeros: pasajerosArray,
     };
 
     try {
@@ -384,7 +370,7 @@ function PantallaFormulario({ reserva, setReserva, setPantalla, setReservaConfir
         if (res.status === 409) {
           const errData = await res.json();
           alert(`Error: Asientos ${errData.asientos_ocupados.join(', ')} ya no están disponibles.`);
-          setPantalla('asientos'); // Manda al usuario de regreso
+          setPantalla('asientos'); 
         } else {
           throw new Error('No se pudo crear la reserva');
         }
@@ -393,7 +379,6 @@ function PantallaFormulario({ reserva, setReserva, setPantalla, setReservaConfir
         setReservaConfirmada(data);
         setPantalla('confirmacion');
       }
-
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -406,29 +391,51 @@ function PantallaFormulario({ reserva, setReserva, setPantalla, setReservaConfir
       <button onClick={() => setPantalla('asientos')} className="text-brand-secondary">
         <i className="fas fa-arrow-left"></i> Regresar
       </button>
-      <h2 className="text-xl font-semibold text-center text-gray-800">Datos del Pasajero</h2>
+      <h2 className="text-xl font-semibold text-center text-gray-800">Datos de los Pasajeros</h2>
       
-      <form onSubmit={handleSubmit} className="space-y-4 mt-4">
-        <div className="bg-white p-3 rounded-xl shadow">
-          <p className="text-sm text-gray-600">Ruta: <strong className="text-brand-primary">{reserva.ruta_nombre}</strong></p>
-          <p className="text-sm text-gray-600">Horario: <strong className="text-brand-primary">{reserva.corrida?.hora_salida}</strong></p>
-          <p className="text-sm text-gray-600">Asientos: <strong className="text-brand-primary">{reserva.asientos.join(', ')}</strong></p>
-        </div>
-
-        <div>
-          <label htmlFor="nombre" className="block text-sm font-medium text-gray-700">Nombre Completo*</label>
-          <input type="text" id="nombre" value={reserva.nombre} onChange={handleChange} className="mt-1 block w-full p-3 border border-gray-300 rounded-xl shadow-sm" required />
-        </div>
-        <div>
-          <label htmlFor="telefono" className="block text-sm font-medium text-gray-700">Teléfono / WhatsApp (10 dígitos)*</label>
-          <input type="tel" id="telefono" value={reserva.telefono} onChange={handleChange} maxLength={10} className="mt-1 block w-full p-3 border border-gray-300 rounded-xl shadow-sm" required />
-          {/* TODO: Añadir validación de errores */}
-        </div>
-        <div>
-          <label htmlFor="email" className="block text-sm font-medium text-gray-700">Email (Opcional)</label>
-          <input type="email" id="email" value={reserva.email} onChange={handleChange} className="mt-1 block w-full p-3 border border-gray-300 rounded-xl shadow-sm" />
-        </div>
-
+      <form onSubmit={handleSubmit} className="space-y-6 mt-4">
+        {/* --- BUCLE: Renderiza un formulario por cada asiento --- */}
+        {[...reserva.pasajeros.entries()].map(([asientoNum, pasajero]) => (
+          <div key={asientoNum} className="bg-white p-4 rounded-xl shadow-md">
+            <h3 className="text-lg font-bold text-brand-primary mb-3">
+              Pasajero - Asiento #{asientoNum}
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="nombre" className="block text-sm font-medium text-gray-700">Nombre Completo*</label>
+                <input 
+                  type="text" 
+                  id="nombre" 
+                  value={pasajero.nombre}
+                  onChange={(e) => handlePasajeroChange(asientoNum, e)}
+                  className="mt-1 block w-full p-3 border border-gray-300 rounded-xl shadow-sm" required 
+                />
+              </div>
+              <div>
+                <label htmlFor="telefono" className="block text-sm font-medium text-gray-700">Teléfono / WhatsApp (10 dígitos)*</label>
+                <input 
+                  type="tel" 
+                  id="telefono" 
+                  value={pasajero.telefono}
+                  onChange={(e) => handlePasajeroChange(asientoNum, e)}
+                  maxLength={10} 
+                  className="mt-1 block w-full p-3 border border-gray-300 rounded-xl shadow-sm" required 
+                />
+              </div>
+              <div>
+                <label htmlFor="email" className="block text-sm font-medium text-gray-700">Email (Opcional)</label>
+                <input 
+                  type="email" 
+                  id="email" 
+                  value={pasajero.email}
+                  onChange={(e) => handlePasajeroChange(asientoNum, e)}
+                  className="mt-1 block w-full p-3 border border-gray-300 rounded-xl shadow-sm" 
+                />
+              </div>
+            </div>
+          </div>
+        ))}
+        
         {error && <p className="text-center text-brand-alert">{error}</p>}
 
         <button 
@@ -443,22 +450,42 @@ function PantallaFormulario({ reserva, setReserva, setPantalla, setReservaConfir
   );
 }
 
-// ===========================================
-// --- PANTALLA 5: CONFIRMACIÓN ---
+/// ===========================================
+// --- PANTALLA 5: CONFIRMACIÓN (ACTUALIZADO CON QR) ---
 // ===========================================
 function PantallaConfirmacion({ reserva, reservaConfirmada, onNuevaReserva }: any) {
+  // Obtenemos el nombre del primer pasajero para mostrar
+  const primerPasajero = reserva.pasajeros.values().next().value?.nombre || "N/A";
+
   return (
     <section className="pantalla text-center">
       <i className="fas fa-check-circle text-brand-success text-6xl mb-4"></i>
       <h2 className="text-2xl font-bold text-gray-800">¡Reserva Confirmada!</h2>
       
       <div className="bg-white p-4 rounded-xl shadow-md my-6 text-left space-y-2">
-        <p><strong>Código de Reserva:</strong></p>
-        <p className="text-2xl font-bold text-brand-primary text-center bg-brand-light-gray py-2 rounded-lg">
-          {reservaConfirmada?.codigo_reserva}
+        
+        <p className="text-center font-medium">Escanea tu código para abordar:</p>
+        
+        {/* --- AQUÍ ESTÁ LA MAGIA --- */}
+        {/* Si existe un código de reserva, crea una etiqueta de imagen.
+          El 'src' de la imagen es la URL de tu API de Flask.
+        */}
+        {reservaConfirmada?.codigo_reserva && (
+          <img 
+            src={`http://localhost:5000/api/ticket/qr/${reservaConfirmada.codigo_reserva}`}
+            alt={`Código QR para ${reservaConfirmada.codigo_reserva}`}
+            className="w-full max-w-xs mx-auto rounded-lg shadow-md"
+          />
+        )}
+        {/* --- FIN DE LA MAGIA --- */}
+
+        <p className="text-center text-sm text-gray-500 pt-2">
+          Código: {reservaConfirmada?.codigo_reserva}
         </p>
         
-        <p><strong>Pasajero:</strong> {reserva.nombre}</p>
+        <hr className="my-4"/>
+
+        <p><strong>Pasajero(s):</strong> {primerPasajero} {reserva.asientos.length > 1 ? `y ${reserva.asientos.length - 1} más` : ''}</p>
         <p><strong>Ruta:</strong> {reserva.ruta_nombre}</p>
         <p><strong>Horario:</strong> {reserva.corrida?.hora_salida}</p>
         <p><strong>Asientos:</strong> {reserva.asientos.join(', ')}</p>
@@ -466,7 +493,6 @@ function PantallaConfirmacion({ reserva, reservaConfirmada, onNuevaReserva }: an
       
       <p className="text-gray-600">Recibirás los detalles de pago por WhatsApp.</p>
       
-      {/* TODO: Generar el mensaje de WhatsApp dinámicamente */}
       <a id="btn-whatsapp" href="#" target="_blank" className="mt-6 w-full bg-green-500 text-white font-bold py-3 rounded-xl shadow-lg transition hover:bg-opacity-90 flex items-center justify-center">
         <i className="fab fa-whatsapp text-2xl mr-2"></i> Compartir por WhatsApp
       </a>
