@@ -9,12 +9,14 @@ import io
 import stripe # (NUEVO) Para pagos
 from flask_bcrypt import Bcrypt # (NUEVO) Para hashear contraseñas
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity #Para tokens de sesión
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from fpdf import FPDF
+from flask import Response 
+
 # 1. Crea la instancia de Flask
 app = Flask(__name__)
 # Permite que 'http://localhost:3000' (tu React) haga peticiones a tu API
 CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
-# 2. Configura la "Cadena de Conexión"
 DB_URL = 'postgresql://travel_admin:123456@localhost/travel_tour_db'
 app.config['SQLALCHEMY_DATABASE_URI'] = DB_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -76,18 +78,19 @@ def get_corridas():
         return jsonify({'error': 'Faltan parámetros: se requiere ruta_id y fecha'}), 400
 
     try:
-        # 2. Convertir la fecha de texto a un objeto 'date' de Python
+       # 2. Convertir la fecha de texto a un objeto 'date' de Python
         fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
 
-        # 3. Construir la consulta a la base de datos
-        #    Busca en la tabla 'Corridas'
-        #    - que coincida con la ruta_id
-        #    - donde la fecha_hora_salida sea EN la fecha que nos dieron
+        # 3. (BLOQUE MODIFICADO) Construir la consulta a la base de datos
+        #    Obtenemos la hora actual (en UTC, asumiendo que el servidor está en UTC)
+        #    Si tu servidor está en hora local, usa datetime.now()
+        # La nueva línea (robusta):
+        ahora = datetime.now(timezone.utc)
         corridas = Corridas.query.filter(
             Corridas.ruta_id == ruta_id,
-            db.func.date(Corridas.fecha_hora_salida) == fecha
-        ).all()
-
+            db.func.date(Corridas.fecha_hora_salida) == fecha,
+            Corridas.fecha_hora_salida > ahora # <-- ¡AQUÍ ESTÁ LA LÓGICA DE ROBUSTEZ!
+        ).order_by(Corridas.fecha_hora_salida.asc()).all() # (Opcional: ordenar por hora)
         # 4. Convertir los resultados a un formato JSON que React entienda
         lista_corridas = []
         for corrida in corridas:
@@ -683,6 +686,94 @@ def actualizar_corrida(corrida_id):
         print("--------------------------------------------------\n")
         return jsonify({'error': f'Error en el servidor: {str(e)}'}), 500
     
+#--- ENDPOINT: GENERADOR DE BOLETO PDF ---
+@app.route('/api/ticket/pdf/<codigo_reserva>', methods=['GET'])
+def get_ticket_pdf(codigo_reserva):
+    try:
+        # 1. Buscar la reserva y todos sus datos
+        reserva = Reservas.query.filter_by(codigo_reserva=codigo_reserva).first()
+        if not reserva:
+            return jsonify({'error': 'Reserva no encontrada'}), 404
+        
+        # Usamos las relaciones (backrefs) para obtener los datos
+        corrida = reserva.corrida
+        ruta = corrida.ruta
+        pasajeros = reserva.asientos # Esta es la lista de AsientosReservados
+
+        # 2. Generar el QR en memoria (igual que antes)
+        qr = qrcode.QRCode(version=1, box_size=4, border=2) # Hacemos el QR más pequeño
+        qr.add_data(codigo_reserva)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        
+        # Guardar QR en un buffer para FPDF
+        qr_buffer = io.BytesIO()
+        img.save(qr_buffer, format='PNG')
+        qr_buffer.seek(0)
+
+        # 3. Crear el PDF con FPDF (Formato de Boleto, ej. 80mm de ancho)
+        pdf = FPDF(orientation='P', unit='mm', format=(80, 150)) # Ancho 80mm, Alto 150mm
+        pdf.add_page()
+        pdf.set_auto_page_break(auto=True, margin=5)
+        
+        # --- Contenido del Boleto ---
+        pdf.set_font('Arial', 'B', 14)
+        pdf.cell(0, 10, 'Pacífico Tour', 0, 1, 'C')
+        
+        pdf.set_font('Arial', '', 10)
+        pdf.cell(0, 7, f'RUTA: {ruta.origen.upper()}', 0, 1)
+        pdf.cell(0, 7, f'DESTINO: {ruta.destino.upper()}', 0, 1)
+        pdf.cell(0, 7, f'SALIDA: {corrida.fecha_hora_salida.strftime("%Y-%m-%d %I:%M %p")}', 0, 1)
+        pdf.cell(0, 7, f'ESTADO: {reserva.estado_pago.upper()}', 0, 1)
+        pdf.ln(3) # Salto de línea
+
+        # Encabezados de la tabla de pasajeros
+        pdf.set_font('Arial', 'B', 8)
+        pdf.cell(50, 7, 'PASAJERO', 1)
+        pdf.cell(20, 7, 'ASIENTO', 1)
+        pdf.ln()
+
+        # Datos de los pasajeros (Manejo de acentos con 'latin-1')
+        pdf.set_font('Arial', '', 8)
+        for p in pasajeros:
+            try:
+                # FPDF no maneja bien UTF-8, forzamos latin-1
+                nombre_limpio = p.nombre_pasajero.encode('latin-1', 'replace').decode('latin-1')
+            except:
+                nombre_limpio = 'Pasajero'
+            pdf.cell(50, 7, nombre_limpio, 1)
+            pdf.cell(20, 7, str(p.numero_asiento), 1)
+            pdf.ln()
+        
+        pdf.ln(5)
+        
+        # Insertar el QR en el PDF
+        pdf.image(qr_buffer, x=15, y=pdf.get_y(), w=50, h=50, type='PNG')
+        pdf.set_y(pdf.get_y() + 52) # Moverse después del QR
+
+        pdf.set_font('Arial', 'I', 8)
+        pdf.cell(0, 5, f'CODIGO: {reserva.codigo_reserva}', 0, 1, 'C')
+        
+        # 4. Devolver el PDF al navegador
+        
+        # --- ¡ESTA ES LA CORRECCIÓN! ---
+        # fpdf.output(dest='S') devuelve un 'bytearray'
+        pdf_byte_array = pdf.output(dest='S')
+        
+        # El servidor (Werkzeug) exige 'bytes'. Los convertimos.
+        pdf_output_bytes = bytes(pdf_byte_array) 
+        # --- FIN DE LA CORRECCIÓN ---
+        
+        return Response(pdf_output_bytes, # Le pasamos los 'bytes'
+                        mimetype='application/pdf',
+                        headers={'Content-Disposition': f'inline; filename=boleto_{codigo_reserva}.pdf'})
+    
+    except Exception as e:
+        print(f"--- 💥 ERROR DETALLADO EN /api/ticket/pdf 💥 ---")
+        traceback.print_exc()
+        print("--------------------------------------------------\n")
+        return jsonify({'error': f'Error al generar el PDF: {str(e)}'}), 500
+    
 # Correrlo en modo desarrollo
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0') # <-- ¡CORRECCIÓN AQUÍ!

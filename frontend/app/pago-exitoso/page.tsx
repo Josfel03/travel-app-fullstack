@@ -21,23 +21,31 @@ export default function PagoExitosoPage() {
         <p className="text-gray-600 text-lg mb-8">
           Tu reserva ha sido confirmada.
         </p>
-        
-        {/* 3. Mostramos el QR solo si tenemos el 'codigoReserva' */}
-        {codigoReserva ? (
-          <div className="bg-white p-4 rounded-xl shadow-md my-6 w-full max-w-xs">
-            <p className="text-center font-medium mb-4">Escanea tu código para abordar:</p>
-            <img 
-              src={`http://localhost:5000/api/ticket/qr/${codigoReserva}`}
-              alt={`Código QR para ${codigoReserva}`}
-              className="w-full mx-auto rounded-lg"
-            />
-            <p className="text-center text-sm text-gray-500 pt-4">
-              Código: <strong>{codigoReserva}</strong>
-            </p>
-          </div>
-        ) : (
-          <p className="text-brand-alert">No se pudo encontrar el código de reserva.</p>
-        )}
+      {/* 3. Mostramos el BOTÓN DE PDF solo si tenemos el 'codigoReserva' */}
+      {codigoReserva ? (
+        <div className="bg-white p-6 rounded-xl shadow-md my-6 w-full max-w-xs">
+          <p className="text-center font-medium mb-4">¡Tu boleto está listo!</p>
+
+          {/* --- ¡AQUÍ ESTÁ EL CAMBIO! --- */}
+          {/* Reemplazamos el <img> por un <a> (enlace) estilizado como botón */}
+          <a 
+            href={`http://localhost:5000/api/ticket/pdf/${codigoReserva}`}
+            target="_blank" // Abre el PDF en una nueva pestaña
+            rel="noopener noreferrer"
+            className="w-full p-4 bg-brand-alert text-white font-bold rounded-xl shadow-lg transition hover:bg-opacity-90 flex items-center justify-center text-lg"
+          >
+            <i className="fas fa-file-pdf mr-3"></i>
+            Descargar mi Boleto (PDF)
+          </a>
+          {/* --- FIN DEL CAMBIO --- */}
+
+          <p className="text-center text-sm text-gray-500 pt-4">
+            Código: <strong>{codigoReserva}</strong>
+          </p>
+        </div>
+      ) : (
+        <p className="text-brand-alert">No se pudo encontrar el código de reserva.</p>
+      )}
         
         <Link href="/" className="mt-8 bg-brand-primary text-white font-bold py-3 px-6 rounded-xl shadow-lg transition hover:bg-opacity-90">
             Hacer otra reserva
