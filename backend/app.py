@@ -6,6 +6,9 @@ from flask_cors import CORS  # <-- 1. IMPORTA ESTO
 import traceback # Para imprimir errores detallados
 import qrcode
 import io 
+from flask_bcrypt import Bcrypt # (NUEVO) Para hashear contraseñas
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity #Para tokens de sesión
+from datetime import datetime, timedelta
 # 1. Crea la instancia de Flask
 app = Flask(__name__)
 # Permite que 'http://localhost:3000' (tu React) haga peticiones a tu API
@@ -15,9 +18,17 @@ DB_URL = 'postgresql://travel_admin:123456@localhost/travel_tour_db'
 app.config['SQLALCHEMY_DATABASE_URI'] = DB_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
+
+# Configuración de Seguridad JWT
+# ¡Frase secreta y larga!
+app.config['JWT_SECRET_KEY'] = 'mi-llave-secreta-muy-dificil-de-adivinars' 
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1) # El login dura 1 hora
+
 # 3. Inicializa SQLAlchemy
 #    Esto nos permite importar 'db' en otros archivos
 db = db = SQLAlchemy()
+bcrypt = Bcrypt() # Inicializa Bcrypt
+jwt = JWTManager() # Inicializa JWT
 
 # Ruta de prueba de conexion a la db
 @app.route('/api/test')
@@ -31,6 +42,8 @@ def hello_world():
 # IMPORTANTE: Importa los modelos DESPUÉS de crear 'db'
 from models import * # Importa todas las clases de models.py
 db.init_app(app)      # Conecta la 'db' con la 'app'
+bcrypt.init_app(app)  # (NUEVO) Conecta bcrypt
+jwt.init_app(app)     # (NUEVO) Conecta jwt
 
 # RUTA: para crear las tablas en la BD
 @app.route('/api/create_tables')
@@ -306,6 +319,287 @@ def validar_ticket():
         print("--------------------------------------------------\n")
         return jsonify({'error': f'Error en el servidor: {str(e)}'}), 500
 
+
+# (NUEVO) --- ENDPOINT: REGISTRO DE ADMIN (Solo para desarrollo) ---
+@app.route('/api/admin/register', methods=['POST'])
+def admin_register():
+    data = request.get_json()
+    if not data or 'telefono' not in data or 'password' not in data or 'nombre' not in data:
+        return jsonify({'error': 'Faltan datos: telefono, password, nombre'}), 400
+
+    telefono = data['telefono']
+    nombre = data['nombre']
+    
+    # Hashear la contraseña
+    hashed_password = bcrypt.generate_password_hash(data['password']).decode('utf-8')
+    
+    # Crear el nuevo admin
+    nuevo_admin = Usuarios(
+        nombre_completo=nombre,
+        telefono=telefono,
+        password_hash=hashed_password,
+        rol='admin' # ¡Importante!
+    )
+    
+    try:
+        db.session.add(nuevo_admin)
+        db.session.commit()
+        return jsonify({'message': f'Admin {nombre} creado exitosamente'}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'No se pudo crear el admin (quizás el teléfono ya existe): {str(e)}'}), 409
+
+# (NUEVO) --- ENDPOINT: LOGIN DE ADMIN ---
+@app.route('/api/admin/login', methods=['POST'])
+def admin_login():
+    data = request.get_json()
+    if not data or 'telefono' not in data or 'password' not in data:
+        return jsonify({'error': 'Faltan datos: telefono, password'}), 400
+
+    telefono = data['telefono']
+    password = data['password']
+
+    # 1. Buscar al usuario
+    usuario = Usuarios.query.filter_by(telefono=telefono).first()
+
+    # 2. Verificar que exista, que sea 'admin' y que la contraseña sea correcta
+    if not usuario or usuario.rol != 'admin':
+        return jsonify({'error': 'Credenciales inválidas'}), 401 # 401 Unauthorized
+
+    if not bcrypt.check_password_hash(usuario.password_hash, password):
+        return jsonify({'error': 'Credenciales inválidas'}), 401
+
+    # 3. Si todo es correcto, crear un token de acceso
+    access_token = create_access_token(identity=usuario.telefono)
+    return jsonify({
+        'message': f'Bienvenido {usuario.nombre_completo}',
+        'access_token': access_token
+    })
+
+# (NUEVO) --- ENDPOINT: EJEMPLO DE RUTA PROTEGIDA ---
+@app.route('/api/admin/rutas', methods=['GET'])
+@jwt_required() # ¡Magia! Esta línea protege la ruta
+def get_rutas():
+    # Gracias a @jwt_required, podemos saber quién nos visita
+    current_user = get_jwt_identity()
+    print(f"Petición hecha por: {current_user}")
+    
+    rutas = Rutas.query.all()
+    lista_rutas = [{'id': r.id, 'origen': r.origen, 'destino': r.destino} for r in rutas]
+    return jsonify(lista_rutas)
+
+# --- ENDPOINT: CREAR UNA NUEVA RUTA ---
+@app.route('/api/admin/rutas', methods=['POST'])
+@jwt_required() # Protegido: solo admins pueden crear rutas
+def crear_ruta():
+    # 1. Verificar que el que llama es un admin
+    # (Aunque jwt_required() ya lo hace, podemos verificar el 'rol' si quisiéramos)
+    current_user_phone = get_jwt_identity()
+    usuario = Usuarios.query.filter_by(telefono=current_user_phone).first()
+    
+    if not usuario or usuario.rol != 'admin':
+        return jsonify({'error': 'Acceso no autorizado'}), 403 # 403 Forbidden
+
+    # 2. Obtener los datos del formulario (JSON)
+    data = request.get_json()
+    if not data or 'origen' not in data or 'destino' not in data:
+        return jsonify({'error': 'Faltan datos: origen, destino'}), 400
+
+    origen = data.get('origen')
+    destino = data.get('destino')
+    duracion = data.get('duracion') # Opcional
+
+    # 3. Crear la nueva ruta
+    try:
+        nueva_ruta = Rutas(
+            origen=origen,
+            destino=destino,
+            duracion_estimada_min=duracion
+        )
+        db.session.add(nueva_ruta)
+        db.session.commit()
+        
+        # 4. Devolver la ruta recién creada (para que el frontend la añada a la lista)
+        return jsonify({
+            'id': nueva_ruta.id,
+            'origen': nueva_ruta.origen,
+            'destino': nueva_ruta.destino
+        }), 201 # 201 Created
+
+    except Exception as e:
+        db.session.rollback()
+        print("\n--- 💥 ERROR DETALLADO EN /api/admin/rutas (POST) 💥 ---")
+        traceback.print_exc()
+        print("--------------------------------------------------\n")
+        return jsonify({'error': f'Error en el servidor: {str(e)}'}), 500
+
+# (NUEVO) --- ENDPOINT: OBTENER TODAS LAS CORRIDAS (ADMIN) ---
+@app.route('/api/admin/corridas', methods=['GET'])
+@jwt_required()
+def get_todas_corridas():
+    # (Validación de admin omitida por brevedad, @jwt_required ya protege)
+    try:
+        # Hacemos un 'join' (unión) para obtener también el nombre de la ruta
+        corridas_db = db.session.query(Corridas, Rutas.origen, Rutas.destino)\
+            .join(Rutas, Corridas.ruta_id == Rutas.id)\
+            .order_by(Corridas.fecha_hora_salida.desc())\
+            .all()
+
+        # Convertimos los resultados a JSON
+        lista_corridas = []
+        for corrida, origen, destino in corridas_db:
+            lista_corridas.append({
+                'id': corrida.id,
+                'ruta_nombre': f"{origen} → {destino}",
+                'fecha_hora_salida': corrida.fecha_hora_salida.isoformat(), # Formato ISO (ej. 2025-11-07T09:00:00)
+                'precio': str(corrida.precio),
+                'capacidad': corrida.capacidad_total
+            })
+        
+        return jsonify(lista_corridas)
+
+    except Exception as e:
+        db.session.rollback()
+        print("\n--- 💥 ERROR DETALLADO EN /api/admin/corridas (GET) 💥 ---")
+        traceback.print_exc()
+        print("--------------------------------------------------\n")
+        return jsonify({'error': f'Error en el servidor: {str(e)}'}), 500
+
+# (NUEVO) --- ENDPOINT: CREAR UNA NUEVA CORRIDA (ADMIN) ---
+@app.route('/api/admin/corridas', methods=['POST'])
+@jwt_required()
+def crear_corrida():
+    # Verificamos que sea un admin
+    current_user_phone = get_jwt_identity()
+    usuario = Usuarios.query.filter_by(telefono=current_user_phone).first()
+    
+    if not usuario or usuario.rol != 'admin':
+        return jsonify({'error': 'Acceso no autorizado'}), 403
+
+    data = request.get_json()
+    if not data or 'ruta_id' not in data or 'fecha_hora' not in data or 'precio' not in data:
+        return jsonify({'error': 'Faltan datos: ruta_id, fecha_hora, precio'}), 400
+
+    try:
+        # Crear la nueva corrida con los datos del JSON
+        nueva_corrida = Corridas(
+            ruta_id=int(data['ruta_id']),
+            fecha_hora_salida=datetime.fromisoformat(data['fecha_hora']), # Espera formato ISO (ej. 2025-11-08T09:00:00)
+            precio=float(data['precio']),
+            capacidad_total=data.get('capacidad', 19) # 19 por defecto
+        )
+        db.session.add(nueva_corrida)
+        db.session.commit()
+
+        # Devolvemos un objeto 'completo' (con el nombre de la ruta)
+        # para que el frontend pueda actualizar la tabla al instante
+        ruta = Rutas.query.get(nueva_corrida.ruta_id)
+
+        return jsonify({
+            'id': nueva_corrida.id,
+            'ruta_nombre': f"{ruta.origen} → {ruta.destino}",
+            'fecha_hora_salida': nueva_corrida.fecha_hora_salida.isoformat(),
+            'precio': str(nueva_corrida.precio),
+            'capacidad': nueva_corrida.capacidad_total
+        }), 201 # 201 Created
+
+    except Exception as e:
+        db.session.rollback()
+        print("\n--- 💥 ERROR DETALLADO EN /api/admin/corridas (POST) 💥 ---")
+        traceback.print_exc()
+        print("--------------------------------------------------\n")
+        return jsonify({'error': f'Error en el servidor: {str(e)}'}), 500
+# (NUEVO) --- ENDPOINT: CANCELAR (DELETE) UNA CORRIDA ---
+@app.route('/api/admin/corridas/<int:corrida_id>', methods=['DELETE'])
+@jwt_required()
+def cancelar_corrida(corrida_id):
+    # Verificamos que sea un admin
+    current_user_phone = get_jwt_identity()
+    usuario = Usuarios.query.filter_by(telefono=current_user_phone).first()
+    
+    if not usuario or usuario.rol != 'admin':
+        return jsonify({'error': 'Acceso no autorizado'}), 403
+
+    try:
+        # 1. Buscar la corrida que se quiere borrar
+        corrida = Corridas.query.get(corrida_id)
+        if not corrida:
+            return jsonify({'error': 'Corrida no encontrada'}), 404
+
+        # 2. ¡Lógica de Robustez!
+        #    Verificar si esta corrida YA tiene reservas (boletos vendidos)
+        reservas_existentes = Reservas.query.filter_by(corrida_id=corrida_id).first()
+        if reservas_existentes:
+            return jsonify({
+                'error': 'Esta corrida no se puede eliminar porque ya tiene boletos vendidos.'
+            }), 409 # 409 Conflict
+
+        # 3. Si no hay reservas, es seguro eliminarla
+        db.session.delete(corrida)
+        db.session.commit()
+
+        return jsonify({'message': 'Corrida cancelada exitosamente'}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        print("\n--- 💥 ERROR DETALLADO EN /api/admin/corridas (DELETE) 💥 ---")
+        traceback.print_exc()
+        print("--------------------------------------------------\n")
+        return jsonify({'error': f'Error en el servidor: {str(e)}'}), 500
+# (NUEVO) --- ENDPOINT: ACTUALIZAR (PUT) UNA CORRIDA ---
+@app.route('/api/admin/corridas/<int:corrida_id>', methods=['PUT'])
+@jwt_required()
+def actualizar_corrida(corrida_id):
+    # Verificamos que sea un admin
+    current_user_phone = get_jwt_identity()
+    usuario = Usuarios.query.filter_by(telefono=current_user_phone).first()
+    
+    if not usuario or usuario.rol != 'admin':
+        return jsonify({'error': 'Acceso no autorizado'}), 403
+
+    try:
+        # 1. Buscar la corrida que se quiere actualizar
+        corrida = Corridas.query.get(corrida_id)
+        if not corrida:
+            return jsonify({'error': 'Corrida no encontrada'}), 404
+
+        # 2. Obtener los nuevos datos del JSON
+        data = request.get_json()
+        if not data or 'ruta_id' not in data or 'fecha_hora' not in data or 'precio' not in data:
+            return jsonify({'error': 'Faltan datos: ruta_id, fecha_hora, precio'}), 400
+
+        # 3. (OPCIONAL) Lógica de Robustez
+        #    Si la corrida ya tiene boletos, quizás solo quieras permitir cambiar el precio
+        #    reservas_existentes = Reservas.query.filter_by(corrida_id=corrida_id).first()
+        #    if reservas_existentes and (corrida.ruta_id != int(data['ruta_id']) or ... ):
+        #        return jsonify({'error': 'No se puede cambiar la ruta/hora de una corrida con boletos vendidos'}), 409
+
+        # 4. Actualizar los campos del objeto 'corrida'
+        corrida.ruta_id = int(data['ruta_id'])
+        corrida.fecha_hora_salida = datetime.fromisoformat(data['fecha_hora'])
+        corrida.precio = float(data['precio'])
+        corrida.capacidad_total = data.get('capacidad', 19)
+
+        # 5. Guardar los cambios en la BD
+        db.session.commit()
+
+        # 6. Devolver el objeto actualizado (con el nombre de la ruta)
+        ruta = Rutas.query.get(corrida.ruta_id)
+        return jsonify({
+            'id': corrida.id,
+            'ruta_nombre': f"{ruta.origen} → {ruta.destino}",
+            'fecha_hora_salida': corrida.fecha_hora_salida.isoformat(),
+            'precio': str(corrida.precio),
+            'capacidad': corrida.capacidad_total
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        print("\n--- 💥 ERROR DETALLADO EN /api/admin/corridas (PUT) 💥 ---")
+        traceback.print_exc()
+        print("--------------------------------------------------\n")
+        return jsonify({'error': f'Error en el servidor: {str(e)}'}), 500
+    
 # Correrlo en modo desarrollo
 if __name__ == '__main__':
     app.run(debug=True)
