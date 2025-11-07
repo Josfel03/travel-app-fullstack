@@ -26,6 +26,7 @@ export interface Corrida {
 
 
 export interface AsientosInfo {
+  error?: string;
   capacidad_total: number;
   asientos_ocupados: number[];
 }

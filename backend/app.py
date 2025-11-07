@@ -1,6 +1,7 @@
 from flask import Flask, jsonify, request, send_file # <-- ASEGÚRATE DE IMPORTAR jsonify y request
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text
+import sqlalchemy.exc
 from datetime import datetime # 
 from flask_cors import CORS  # <-- 1. IMPORTA ESTO
 import traceback # Para imprimir errores detallados
@@ -123,22 +124,31 @@ def get_asientos():
         
         capacidad_total = corrida.capacidad_total
 
-        # 3. Buscar todos los asientos YA RESERVADOS para esta corrida
-        #    Esto une las tablas Reservas y AsientosReservados
-        asientos_ocupados_query = db.session.query(AsientosReservados.numero_asiento)\
+       # 3. (BLOQUE MODIFICADO) Buscar todos los asientos ocupados (RESERVADOS y BLOQUEADOS)
+
+        # 3a. Asientos YA PAGADOS (Permanentes)
+        asientos_reservados_query = db.session.query(AsientosReservados.numero_asiento)\
             .join(Reservas)\
             .filter(Reservas.corrida_id == corrida_id)\
-            .all() # Obtiene todos los resultados
+            .all()
+        
+        # 3b. Asientos BLOQUEADOS (Temporales) y no expirados
+        asientos_bloqueados_query = db.session.query(AsientosBloqueados.numero_asiento)\
+            .filter(
+                AsientosBloqueados.corrida_id == corrida_id,
+                AsientosBloqueados.expira_en > datetime.now(timezone.utc)
+            ).all()
 
-        # 4. 'asientos_ocupados_query' es una lista de tuplas, ej: [(5,), (8,)]
-        #    La convertimos a una lista simple de números: [5, 8]
-        lista_ocupados = [asiento[0] for asiento in asientos_ocupados_query]
+        # 4. Combinar las listas
+        lista_reservados = {asiento[0] for asiento in asientos_reservados_query}
+        lista_bloqueados = {asiento[0] for asiento in asientos_bloqueados_query}
+        
+        lista_ocupados_y_bloqueados = list(lista_reservados.union(lista_bloqueados))
 
-        # 5. Devolver la lista completa de asientos (del 1 al total)
-        #    y la lista de los que están ocupados.
+        # 5. Devolver la lista completa de asientos
         return jsonify({
             'capacidad_total': capacidad_total,
-            'asientos_ocupados': lista_ocupados
+            'asientos_ocupados': lista_ocupados_y_bloqueados # <-- CAMBIO DE NOMBRE
         })
 
     except Exception as e:
@@ -773,7 +783,71 @@ def get_ticket_pdf(codigo_reserva):
         traceback.print_exc()
         print("--------------------------------------------------\n")
         return jsonify({'error': f'Error al generar el PDF: {str(e)}'}), 500
-    
+
+# (NUEVO) --- ENDPOINT: BLOQUEAR ASIENTOS TEMPORALMENTE ---
+# --- ENDPOINT: BLOQUEAR ASIENTOS ---
+@app.route('/api/bloquear-asientos', methods=['POST'])
+def bloquear_asientos():
+    data = request.get_json()
+    corrida_id = data.get('corrida_id')
+    asientos = data.get('asientos') # Lista de números [5, 6]
+
+    if not corrida_id or not asientos:
+        return jsonify({'error': 'Faltan datos de corrida o asientos'}), 400
+
+    try:
+        # 1. Chequeo doble: ¿Están ya reservados (pagados)?
+        asientos_ya_reservados = db.session.query(AsientosReservados.numero_asiento)\
+            .join(Reservas).filter(
+                Reservas.corrida_id == corrida_id,
+                AsientosReservados.numero_asiento.in_(asientos)
+            ).all()
+        
+        if asientos_ya_reservados:
+            return jsonify({'error': 'Asiento ya reservado (pagado)'}), 409
+
+        # 2. Chequeo de bloqueos actuales (si ya alguien más los está viendo)
+        bloqueos_actuales = AsientosBloqueados.query.filter(
+            AsientosBloqueados.corrida_id == corrida_id,
+            AsientosBloqueados.numero_asiento.in_(asientos),
+            AsientosBloqueados.expira_en > datetime.now(timezone.utc)
+        ).all()
+
+        if bloqueos_actuales:
+            bloqueados_nums = [b.numero_asiento for b in bloqueos_actuales]
+            return jsonify({'error': 'Asiento bloqueado temporalmente', 'asientos': bloqueados_nums}), 409
+
+        # 3. Si están libres, creamos el bloqueo (expira en 5 minutos)
+        tiempo_expiracion = datetime.now(timezone.utc) + timedelta(minutes=5)
+        
+        for asiento_num in asientos:
+            nuevo_bloqueo = AsientosBloqueados(
+                corrida_id=corrida_id,
+                numero_asiento=asiento_num,
+                expira_en=tiempo_expiracion
+            )
+            db.session.add(nuevo_bloqueo)
+
+        db.session.commit()
+        return jsonify({'message': 'Bloqueo temporal exitoso', 'expiracion': tiempo_expiracion.isoformat()}), 200
+
+    except sqlalchemy.exc.IntegrityError as e: # <-- ¡ATRAPAMOS EL ERROR ESPECÍFICO!
+        db.session.rollback()
+        # Si la violación de unicidad ocurre, significa que el asiento ya fue bloqueado
+        if 'duplicate key value violates unique constraint' in str(e):
+             return jsonify({
+                'error': 'Lo sentimos, uno o más asientos han sido tomados o están bloqueados por otro usuario.'
+            }), 409 # 409 Conflict 
+        else:
+             # Si es otro error de integridad, devolvemos 500
+             raise 
+
+    except Exception as e:
+        db.session.rollback()
+        print("\n--- 💥 ERROR DETALLADO EN /api/bloquear-asientos 💥 ---")
+        traceback.print_exc()
+        print("--------------------------------------------------\n")
+        return jsonify({'error': f'Error en el servidor: {str(e)}'}), 500
 # Correrlo en modo desarrollo
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0') # <-- ¡CORRECCIÓN AQUÍ!

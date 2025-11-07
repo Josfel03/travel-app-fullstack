@@ -88,3 +88,20 @@ class AsientosReservados(db.Model):
     def __repr__(self):
         # Actualizamos esto para que sea más útil al depurar
         return f'<Asiento {self.numero_asiento} - {self.nombre_pasajero}>'
+# (NUEVO MODELO) --- AsientosBloqueados ---
+class AsientosBloqueados(db.Model):
+    __tablename__ = 'asientos_bloqueados'
+    id = db.Column(db.Integer, primary_key=True)
+    corrida_id = db.Column(db.Integer, db.ForeignKey('corridas.id'), nullable=False)
+    numero_asiento = db.Column(db.Integer, nullable=False)
+    # 5 minutos es el tiempo estándar para completar un pago
+    expira_en = db.Column(db.DateTime, nullable=False) 
+
+    # Agregamos una restricción para que no se pueda bloquear el mismo asiento
+    # dos veces para la misma corrida.
+    __table_args__ = (
+        db.UniqueConstraint('corrida_id', 'numero_asiento', name='_corrida_asiento_uc'),
+    )
+
+    def __repr__(self):
+        return f'<Bloqueo Asiento {self.numero_asiento} en Corrida {self.corrida_id}>'
