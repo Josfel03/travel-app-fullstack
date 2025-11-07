@@ -16,29 +16,47 @@ from flask import Response
 
 # 1. Crea la instancia de Flask
 app = Flask(__name__)
-# Permite que 'http://localhost:3000' (tu React) haga peticiones a tu API
-CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
-DB_URL = 'postgresql://travel_admin:123456@localhost/travel_tour_db'
-app.config['SQLALCHEMY_DATABASE_URI'] = DB_URL
+import os
+from flask_cors import CORS
+
+CORS(app, resources={r"/api/*": {"origins": [
+    "http://localhost:3000",
+    "https://TU_DOMINIO_FRONTEND.vercel.app"
+]}})
+
+# --- BASE DE DATOS ---
+# Usa la variable DATABASE_URL que configuraste en Railway
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv(
+    'DATABASE_URL',
+    'postgresql://postgres:LEHFoOWFTAGsrAwGoFteTHCUjCBrwmyy@postgres.railway.internal:5432/railway'
+)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# Configuración de Stripe ---
-# ¡IMPORTANTE! Obtén estas llaves desde tu Dashboard de Stripe (en modo de prueba)
-# NUNCA compartas tu llave secreta real en el código público. Usa variables de entorno.
-app.config['STRIPE_SECRET_KEY'] = 'sk_test_51SQh9EAKHftjDeWfYhabnvaaxzSOsWLs81mut7DIqP59HbX1IDUqGbFxao8Yo0I4b5Zsrdv8EYROCmEK2xzhK12O00PPHzjXcg' 
-app.config['STRIPE_WEBHOOK_SECRET'] = 'whsec_itQIWSUfL8hsUV1Bl5aInmrByU1vmeHD'
+
+# --- STRIPE CONFIGURACIÓN ---
+# Obtén tus llaves desde el Dashboard de Stripe (modo prueba o live)
+# NUNCA pongas tus llaves reales directamente aquí, solo en Railway
+app.config['STRIPE_SECRET_KEY'] = os.getenv('STRIPE_SECRET_KEY')
+app.config['STRIPE_WEBHOOK_SECRET'] = os.getenv('STRIPE_WEBHOOK_SECRET')
 stripe.api_key = app.config['STRIPE_SECRET_KEY']
 
-# Configuración de Seguridad JWT
-# ¡Frase secreta y larga!
-app.config['JWT_SECRET_KEY'] = 'mi-llave-secreta-muy-dificil-de-adivinars' 
-app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1) # El login dura 1 hora
 
-# 3. Inicializa SQLAlchemy
-#    Esto nos permite importar 'db' en otros archivos
-db = db = SQLAlchemy()
-bcrypt = Bcrypt() # Inicializa Bcrypt
-jwt = JWTManager() # Inicializa JWT
+# --- SEGURIDAD JWT ---
+# Clave secreta larga y segura, también desde variables de entorno
+app.config['JWT_SECRET_KEY'] = os.getenv(
+    'JWT_SECRET_KEY',
+    'clave-fallback-muy-larga-y-dificil-por-si-falta-en-railway'
+)
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
+# --- Inicialización de Extensiones ---
+db = SQLAlchemy()      # Base de datos
+bcrypt = Bcrypt()      # Encriptación de contraseñas
+jwt = JWTManager()     # Manejo de tokens
+
+# Asocia las extensiones con la app Flask
+db.init_app(app)
+bcrypt.init_app(app)
+jwt.init_app(app)
 
 # Ruta de prueba de conexion a la db
 @app.route('/api/test')
