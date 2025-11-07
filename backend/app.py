@@ -898,6 +898,12 @@ def get_manifiesto(corrida_id):
         traceback.print_exc()
         print("--------------------------------------------------\n")
         return jsonify({'error': f'Error en el servidor: {str(e)}'}), 500
+from models import *
+
+with app.app_context():
+    db.create_all()
+    print("✅ Tablas creadas exitosamente si no existían.")
+
     
 
 if __name__ == "__main__":
