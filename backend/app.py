@@ -12,7 +12,7 @@ from flask_cors import CORS
 from flask_bcrypt import Bcrypt
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from fpdf import FPDF
-
+import pytz
 # --- (NUEVO) Importamos 'db' y los modelos DESDE models.py ---
 # Esto arregla el 'No module named 'models' y 'App not registered'
 from models import db, Usuarios, Rutas, Corridas, Reservas, AsientosReservados, AsientosBloqueados
@@ -20,7 +20,6 @@ from models import db, Usuarios, Rutas, Corridas, Reservas, AsientosReservados, 
 # --- Inicialización de Extensiones (SIN LA APP) ---
 bcrypt = Bcrypt()
 jwt = JWTManager()
-
 
 def create_app():
     """
@@ -85,25 +84,44 @@ def create_app():
             except Exception as e:
                 return {'message': f'Error al crear tablas: {str(e)}'}
         
-        # ---ENDPOINT: OBTENER CORRIDAS ---
+        # ---ENDPOINT: OBTENER CORRIDAS (CORREGIDO PARA ZONA HORARIA) ---
         @app.route('/api/corridas', methods=['GET'])
         def get_corridas():
             ruta_id = request.args.get('ruta_id')
-            fecha_str = request.args.get('fecha')
+            fecha_str = request.args.get('fecha') # ej. "2025-11-08"
+    
             if not ruta_id or not fecha_str:
                 return jsonify({'error': 'Faltan parámetros: se requiere ruta_id y fecha'}), 400
+    
             try:
-                fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
-                ahora = datetime.now(timezone.utc)
+                # 1. Convertir la fecha de texto (local) a un objeto 'date'
+                fecha_seleccionada = datetime.strptime(fecha_str, '%Y-%m-%d').date()
+
+                # 2. Hora actual en UTC (para el filtro de "no mostrar corridas pasadas")
+                ahora_utc = datetime.now(timezone.utc)
+
+                # 3. (BLOQUE MODIFICADO) Construir la consulta
                 corridas = Corridas.query.filter(
                     Corridas.ruta_id == ruta_id,
-                    db.func.date(Corridas.fecha_hora_salida) == fecha,
-                    Corridas.fecha_hora_salida > ahora
+                    # --- ¡LÓGICA CORREGIDA! ---
+                    # 1. Le decimos a Postgres que la columna (que está en UTC) debe ser
+                    #    interpretada ("AT TIME ZONE") en la zona horaria de México.
+                    # 2. LUEGO extraemos la fecha (DATE) de esa hora ya convertida.
+                    # 3. Comparamos esa fecha (ej. 8 de Nov) con la que seleccionó el cliente (8 de Nov).
+                    db.func.date(
+                        Corridas.fecha_hora_salida.op('AT TIME ZONE')('UTC').op('AT TIME ZONE')('America/Mexico_City')
+                    ) == fecha_seleccionada,
+                    # El filtro de hora (para ocultar corridas pasadas) 
+                    # sigue comparando UTC vs UTC (¡lo cual es correcto!)
+                    Corridas.fecha_hora_salida > ahora_utc
                 ).order_by(Corridas.fecha_hora_salida.asc()).all()
+
+                # 4. Convertir los resultados a JSON
                 lista_corridas = []
                 for corrida in corridas:
                     lista_corridas.append({
                         'id': corrida.id,
+                        # (Usamos isoformat para que el frontend haga la conversión local)
                         'hora_salida': corrida.fecha_hora_salida.astimezone(timezone.utc).isoformat(),
                         'precio': str(corrida.precio),
                         'capacidad': corrida.capacidad_total
@@ -111,7 +129,7 @@ def create_app():
                 return jsonify(lista_corridas)
             except Exception as e:
                 return jsonify({'error': f'Error en el servidor: {str(e)}'}), 500
-            
+                
         # --- ENDPOINT: OBTENER ASIENTOS OCUPADOS ---
         @app.route('/api/asientos', methods=['GET'])
         def get_asientos():
@@ -721,6 +739,7 @@ def create_app():
 # Y el 'if __name__ == __main__' SÍ debe estar.
 # Gunicorn buscará 'app' global, así que la creamos.
 app = create_app()
+TZ_MEXICO = pytz.timezone('America/Mexico_City')
 
 if __name__ == '__main__':
     # Esta línea solo se usa para 'flask run' o 'python app.py'
