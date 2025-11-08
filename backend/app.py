@@ -721,6 +721,6 @@ def create_app():
 
 # --- 7. (Opcional) Correr localmente ---
 # Este bloque solo se usa si corres 'python app.py'
-if __name__ == '__main__':
-    app = create_app()
-    app.run(debug=True, host='0.0.0.0', port=5000)
+#if __name__ == '__main__':
+  #  app = create_app()
+   # app.run(debug=True, host='0.0.0.0', port=5000)
