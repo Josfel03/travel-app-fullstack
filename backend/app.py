@@ -104,7 +104,7 @@ def create_app():
                 for corrida in corridas:
                     lista_corridas.append({
                         'id': corrida.id,
-                        'hora_salida': corrida.fecha_hora_salida.strftime('%I:%M %p'),
+                        'hora_salida': corrida.fecha_hora_salida.astimezone(timezone.utc).isoformat(),
                         'precio': str(corrida.precio),
                         'capacidad': corrida.capacidad_total
                     })
@@ -560,7 +560,7 @@ def create_app():
                     lista_corridas.append({
                         'id': corrida.id,
                         'ruta_nombre': f"{origen} → {destino}",
-                        'fecha_hora_salida': corrida.fecha_hora_salida.isoformat(),
+                        'fecha_hora_salida': corrida.fecha_hora_salida.astimezone(timezone.utc).isoformat(),
                         'precio': str(corrida.precio),
                         'capacidad': corrida.capacidad_total
                     })
@@ -596,7 +596,7 @@ def create_app():
                 return jsonify({
                     'id': nueva_corrida.id,
                     'ruta_nombre': f"{ruta.origen} → {ruta.destino}",
-                    'fecha_hora_salida': nueva_corrida.fecha_hora_salida.isoformat(),
+                    'fecha_hora_salida': nueva_corrida.fecha_hora_salida.astimezone(timezone.utc).isoformat(),
                     'precio': str(nueva_corrida.precio),
                     'capacidad': nueva_corrida.capacidad_total
                 }), 201
@@ -658,7 +658,7 @@ def create_app():
                 return jsonify({
                     'id': corrida.id,
                     'ruta_nombre': f"{ruta.origen} → {ruta.destino}",
-                    'fecha_hora_salida': corrida.fecha_hora_salida.isoformat(),
+                    'fecha_hora_salida': corrida.fecha_hora_salida.astimezone(timezone.utc).isoformat(),
                     'precio': str(corrida.precio),
                     'capacidad': corrida.capacidad_total
                 }), 200
@@ -701,7 +701,7 @@ def create_app():
                 return jsonify({
                     'corrida_id': corrida_id,
                     'ruta': f"{corrida.ruta.origen} → {corrida.ruta.destino}",
-                    'fecha_hora': corrida.fecha_hora_salida.strftime('%Y-%m-%d %I:%M %p'),
+                    'fecha_hora': corrida.fecha_hora_salida.astimezone(timezone.utc).isoformat(),
                     'total_pasajeros': len(pasajeros_lista),
                     'manifiesto': pasajeros_lista
                 })
