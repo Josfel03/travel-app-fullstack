@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/router'; // CORRECCIÓN: Cambiado de 'next/navigation' a 'next/router'
+import { useRouter } from 'next/navigation'; // Importamos useRouter para la redirección
 // Importamos el *tipo* pero no el *código* todavía
 import type { Html5QrcodeScanner } from 'html5-qrcode';
 
@@ -23,15 +23,15 @@ export default function ValidarTicketPage() {
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(true);
   const scannerRef = useRef<any | null>(null);
-  const router = useRouter(); // Hook para redirigir
+  const router = useRouter(); // Hook para redirigir si el token falla
 
   // --- (NUEVO) Guardamos el Token en el estado ---
   const [token, setToken] = useState<string | null>(null);
 
-  // --- 1. Efecto para (A) Obtener el Token y (B) Inicializar el escáner ---
+  // 1. Efecto para (A) Obtener el Token y (B) Inicializar el escáner
   useEffect(() => {
     
-    // --- (A) Lógica de Autenticación ---
+    // --- (A) LÓGICA DE AUTENTICACIÓN (AÑADIDA) ---
     const accessToken = localStorage.getItem('access_token');
     if (!accessToken) {
       // Si no hay token, no podemos hacer nada.
@@ -44,11 +44,11 @@ export default function ValidarTicketPage() {
     }
     setToken(accessToken); // Guardamos el token para usarlo después
 
-    // --- (B) Lógica del Escáner ---
+    // --- (B) LÓGICA DEL ESCÁNER (RESTAURADA) ---
     if (isScanning && !scannerRef.current) {
       import('html5-qrcode')
         .then(Html5Qrcode => {
-          if (scannerRef.current) return;
+          if (scannerRef.current) return; // Evita doble inicialización
 
           const scanner = new Html5Qrcode.Html5QrcodeScanner(
             QR_READER_ID,
@@ -57,6 +57,7 @@ export default function ValidarTicketPage() {
           );
 
           const onScanSuccess = (decodedText: string) => {
+            console.log(`QR Escaneado: ${decodedText}`);
             setIsScanning(false);
             setScanResult(decodedText);
             scanner.clear().catch(err => console.error("Error al limpiar el escáner", err));
@@ -91,6 +92,8 @@ export default function ValidarTicketPage() {
     const validarCodigo = async () => {
       setValidationError(null);
       setValidationResponse(null);
+      console.log(`Enviando código ${scanResult} al backend con token...`); // DEPDEBUG
+
       try {
         // Leemos la URL de la API desde las variables de entorno
         const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
@@ -106,19 +109,22 @@ export default function ValidarTicketPage() {
         
         const data: ValidationResponse = await res.json();
         
+        // --- (NUEVO) MEJOR MANEJO DE ERRORES (DEPURACIÓN) ---
         if (res.status === 401) {
-          // Si el token expiró
+          // Si el token expiró o es inválido
           setValidationError("Sesión expirada. Por favor, inicia sesión de nuevo.");
           localStorage.removeItem('access_token');
           router.push('/admin/login'); // Patearlo al login
         } else if (!res.ok) {
+          console.error("Respuesta de error del backend:", data); // DEBUG
           setValidationResponse(data); // Muestra el error (ej. "Boleto inválido")
         } else {
+          console.log("Respuesta de éxito del backend:", data); // DEBUG
           setValidationResponse(data); // Muestra el éxito (ej. "Boleto válido")
         }
 
-      } catch (err) {
-        console.error(err);
+      } catch (err: any) {
+        console.error("Error de Fetch:", err); // DEBUG
         setValidationError("Error de red. No se pudo conectar al servidor de validación.");
       }
     };
@@ -148,6 +154,9 @@ export default function ValidarTicketPage() {
             <div className="flex flex-col items-center">
               <h2 className="text-xl font-semibold mb-4">Apunte la cámara al Código QR</h2>
               <div id={QR_READER_ID} className="w-full max-w-sm"></div>
+              {validationError && (
+                 <p className="text-lg text-red-800 mt-4">{validationError}</p>
+              )}
             </div>
           )}
 
@@ -190,7 +199,7 @@ export default function ValidarTicketPage() {
                   <i className="fas fa-exclamation-triangle text-6xl text-brand-alert mb-4"></i>
                   <h2 className="text-3xl font-bold text-red-800">ERROR</h2>
                   <p className="text-lg text-gray-800 mt-4">{validationError}</p>
-V</div>
+                </div>
               )}
 
               <button
