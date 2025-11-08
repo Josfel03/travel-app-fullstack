@@ -724,4 +724,4 @@ app = create_app()
 
 if __name__ == '__main__':
     # Esta línea solo se usa para 'flask run' o 'python app.py'
-    #app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
