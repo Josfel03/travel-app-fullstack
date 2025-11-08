@@ -104,7 +104,7 @@ def create_app():
                 for corrida in corridas:
                     lista_corridas.append({
                         'id': corrida.id,
-                        'hora_salida': corrida.fecha_hora_salida.strftime('%I:%M %p'),
+                        'hora_salida': corrida.fecha_hora_salida.astimezone(timezone.utc).isoformat(),
                         'precio': str(corrida.precio),
                         'capacidad': corrida.capacidad_total
                     })

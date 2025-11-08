@@ -14,7 +14,7 @@ export interface Ruta {
 // como para el admin (con todos los campos)
 export interface Corrida {
   id: number;
-  hora_salida?: string; // Para el cliente
+  hora_salida: string; // Para el cliente
   precio: string;
   capacidad: number;
   

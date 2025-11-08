@@ -7,7 +7,19 @@ interface Props {
   setReserva: React.Dispatch<React.SetStateAction<ReservaState>>;
   setPantalla: React.Dispatch<React.SetStateAction<string>>;
 }
-
+const formatTime = (isoString: string) => {
+  try {
+    const date = new Date(isoString);
+    // 'es-MX' para México, 'hour12: true' para AM/PM
+    return date.toLocaleString('es-MX', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    }); // ej. "08:00 a. m."
+  } catch (e) {
+    return "Inválido";
+  }
+};
 export default function PantallaHorarios({ reserva, setReserva, setPantalla }: Props) {
   const [corridas, setCorridas] = useState<Corrida[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,7 +82,7 @@ export default function PantallaHorarios({ reserva, setReserva, setPantalla }: P
             onClick={() => handleSelectCorrida(corrida)}
             className="w-full p-4 bg-white rounded-xl shadow-md flex justify-between items-center transition hover:bg-blue-50"
           >
-            <span className="text-lg font-bold text-brand-primary">{corrida.hora_salida}</span>
+            <span className="text-lg font-bold text-brand-primary">{formatTime(corrida.hora_salida)}</span>
             <span className="text-lg font-semibold">${corrida.precio}</span>
             <span className="px-3 py-1 rounded-full text-sm font-medium bg-brand-success text-white">Disponible</span>
           </button>
