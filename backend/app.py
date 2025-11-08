@@ -13,11 +13,8 @@ from flask_bcrypt import Bcrypt
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from fpdf import FPDF
 
-# --- CORRECCIÓN DE RUTA PARA RAILWAY ---
-# Asegura que Python pueda encontrar 'models.py'
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
 # --- (NUEVO) Importamos 'db' y los modelos DESDE models.py ---
+# Esto arregla el 'No module named 'models' y 'App not registered'
 from models import db, Usuarios, Rutas, Corridas, Reservas, AsientosReservados, AsientosBloqueados
 
 # --- Inicialización de Extensiones (SIN LA APP) ---
@@ -36,7 +33,7 @@ def create_app():
     # Lee la BD de Railway, o usa tu BD local si 'DATABASE_URL' no existe
     app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
         'DATABASE_URL', 
-        'postgresql://travel_admin:123456@localhost/travel_tour_db'
+        'postgresql://travel_admin:123456@localhost/travel_tour_db' # Fallback para local
     )
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -379,7 +376,6 @@ def create_app():
                 
                 if codigo_reserva:
                     try:
-                        # (NUEVO) Usamos app_context() para operaciones de BD en el webhook
                         with app.app_context():
                             reserva = Reservas.query.filter_by(codigo_reserva=codigo_reserva).first()
                             if reserva and reserva.estado_pago == 'pendiente':
@@ -719,8 +715,13 @@ def create_app():
     # --- 5. Devuelve la aplicación configurada ---
     return app
 
-# --- 7. (Opcional) Correr localmente ---
-# Este bloque solo se usa si corres 'python app.py'
-#if __name__ == '__main__':
-  #  app = create_app()
-   # app.run(debug=True, host='0.0.0.0', port=5000)
+# --- 6. (¡CORRECCIÓN!) ---
+# Gunicorn (Railway) llama a 'create_app()'.
+# NO debemos llamar a 'app = create_app()' aquí.
+# Y el 'if __name__ == __main__' SÍ debe estar.
+# Gunicorn buscará 'app' global, así que la creamos.
+app = create_app()
+
+if __name__ == '__main__':
+    # Esta línea solo se usa para 'flask run' o 'python app.py'
+    #app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
