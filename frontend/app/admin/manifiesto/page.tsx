@@ -1,7 +1,7 @@
 "use client";
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-
+export const dynamic = 'force-dynamic';
 // Tipos
 interface Corrida {
   id: number;

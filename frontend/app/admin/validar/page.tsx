@@ -12,7 +12,7 @@ interface ValidationResponse {
   codigo_reserva?: string;
   pasajeros?: { nombre: string; asiento: number }[];
 }
-
+export const dynamic = 'force-dynamic';
 // ID del div que usará el escáner
 const QR_READER_ID = "qr-reader";
 

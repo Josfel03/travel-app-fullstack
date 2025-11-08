@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation'; 
 import { Ruta, Corrida } from '../../types'; // Usamos rutas relativas
-
+export const dynamic = 'force-dynamic';
 // --- Tipos de datos locales ---
 type NuevaCorridaForm = {
   ruta_id: string;

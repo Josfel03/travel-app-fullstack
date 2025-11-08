@@ -1,7 +1,7 @@
 "use client";
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-
+export const dynamic = 'force-dynamic';
 // Definimos el tipo de dato para una Ruta
 type Ruta = {
   error: string;

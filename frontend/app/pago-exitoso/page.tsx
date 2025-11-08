@@ -2,7 +2,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation'; // Importa el hook
-
+export const dynamic = 'force-dynamic';
 // Esta página se muestra cuando Stripe redirige al usuario de vuelta
 export default function PagoExitosoPage() {
   

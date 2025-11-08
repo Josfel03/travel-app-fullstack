@@ -1,7 +1,7 @@
 "use client";
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation'; // Importa el 'router' para redirigir
-
+export const dynamic = 'force-dynamic';
 export default function AdminLoginPage() {
   const [telefono, setTelefono] = useState('');
   const [password, setPassword] = useState('');

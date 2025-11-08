@@ -1,7 +1,7 @@
 "use client";
 import React from 'react';
 import Link from 'next/link';
-
+export const dynamic = 'force-dynamic';
 export default function PagoCanceladoPage() {
   return (
     <div className="bg-brand-light-gray font-sans">

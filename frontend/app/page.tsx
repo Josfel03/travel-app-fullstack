@@ -1,7 +1,7 @@
 "use client"; 
 
 import { useState } from 'react';
-
+export const dynamic = 'force-dynamic';
 // --- Importamos nuestros Tipos y Componentes ---
 // CORRECCIÓN: Las rutas ahora apuntan a la raíz (sin /src)
 import { ReservaState, ReservaConfirmada, Pasajero } from './types'; // '@/' apunta a 'frontend/'
