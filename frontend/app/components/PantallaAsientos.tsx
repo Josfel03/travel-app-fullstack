@@ -29,7 +29,7 @@ export default function PantallaAsientos({ reserva, setReserva, setPantalla }: P
       setError(null);
       try {
         // La API ahora devuelve asientos OCUPADOS Y BLOQUEADOS
-        const res = await fetch(`http://localhost:5000/api/asientos?corrida_id=${reserva.corrida!.id}`);
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}//api/asientos?corrida_id=${reserva.corrida!.id}`);
         const data: AsientosInfo = await res.json();
 
         if (!res.ok) {
@@ -101,7 +101,7 @@ export default function PantallaAsientos({ reserva, setReserva, setPantalla }: P
 
     try {
       // 1. Llamar al endpoint para BLOQUEAR los asientos seleccionados
-      const res = await fetch('http://localhost:5000/api/bloquear-asientos', {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/bloquear-asientos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

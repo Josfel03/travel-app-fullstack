@@ -34,7 +34,7 @@ export default function AdminRutasPage() {
       }
 
       try {
-        const res = await fetch('http://localhost:5000/api/admin/rutas', {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/admin/rutas`, {
           method: 'GET',
           headers: { 'Authorization': `Bearer ${token}` }
         });
@@ -79,7 +79,7 @@ export default function AdminRutasPage() {
 
     try {
       // 1. Llamar al nuevo endpoint POST
-      const res = await fetch('http://localhost:5000/api/admin/rutas', {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/admin/rutas`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

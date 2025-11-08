@@ -52,10 +52,10 @@ export default function AdminCorridasPage() {
       setError(null);
       try {
         const [rutasRes, corridasRes] = await Promise.all([
-          fetch('http://localhost:5000/api/admin/rutas', {
+          fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/admin/rutas`, {
             headers: { 'Authorization': `Bearer ${token}` }
           }),
-          fetch('http://localhost:5000/api/admin/corridas', {
+          fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/admin/corridas`, {
             headers: { 'Authorization': `Bearer ${token}` }
           })
         ]);
@@ -127,8 +127,8 @@ export default function AdminCorridasPage() {
     // Define la URL y el Método (Crear o Actualizar)
     const isEditing = editingCorridaId !== null;
     const url = isEditing
-      ? `http://localhost:5000/api/admin/corridas/${editingCorridaId}`
-      : 'http://localhost:5000/api/admin/corridas';
+      ? `${process.env.NEXT_PUBLIC_API_URL}/api/admin/corridas/${editingCorridaId}`
+      : `${process.env.NEXT_PUBLIC_API_URL}/api/admin/corridas`;
     const method = isEditing ? 'PUT' : 'POST';
 
     try {
@@ -182,7 +182,7 @@ export default function AdminCorridasPage() {
     if (!token) { router.push('/admin/login'); return; }
 
     try {
-      const res = await fetch(`http://localhost:5000/api/admin/corridas/${corridaId}`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/admin/corridas/${corridaId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });

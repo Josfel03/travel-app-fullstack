@@ -23,7 +23,7 @@ export default function PantallaConfirmacion({ reserva, reservaConfirmada, onNue
         
         {reservaConfirmada?.codigo_reserva && (
           <img 
-            src={`http://localhost:5000/api/ticket/qr/${reservaConfirmada.codigo_reserva}`}
+            src={`${process.env.NEXT_PUBLIC_API_URL}/api/ticket/qr/${reservaConfirmada.codigo_reserva}`}
             alt={`Código QR para ${reservaConfirmada.codigo_reserva}`}
             className="w-full max-w-xs mx-auto rounded-lg shadow-md"
           />

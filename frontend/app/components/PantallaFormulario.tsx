@@ -40,7 +40,7 @@ export default function PantallaFormulario({ reserva, onFormChange, onRegresar }
 
     try {
       // 3. Llamar al endpoint /api/reservar (que ahora devuelve una URL de pago)
-      const res = await fetch('http://localhost:5000/api/reservar', {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/reservar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

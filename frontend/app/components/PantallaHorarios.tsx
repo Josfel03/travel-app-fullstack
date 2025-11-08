@@ -19,7 +19,7 @@ export default function PantallaHorarios({ reserva, setReserva, setPantalla }: P
       setLoading(true);
       setError('');
       try {
-        const res = await fetch(`http://localhost:5000/api/corridas?ruta_id=${reserva.ruta_id}&fecha=${reserva.fecha}`);
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/corridas?ruta_id=${reserva.ruta_id}&fecha=${reserva.fecha}`);
         if (!res.ok) throw new Error('No se pudieron cargar las corridas');
         const data: Corrida[] = await res.json();
         setCorridas(data);

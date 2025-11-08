@@ -49,7 +49,7 @@ export default function AdminManifiestoPage() {
       setError(null);
 
       try {
-        const res = await fetch('http://localhost:5000/api/admin/corridas', {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/admin/corridas`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
 
@@ -84,7 +84,7 @@ export default function AdminManifiestoPage() {
     setManifiesto([]);
 
     try {
-      const res = await fetch(`http://localhost:5000/api/admin/manifiesto/${corridaId}`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/admin/manifiesto/${corridaId}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 

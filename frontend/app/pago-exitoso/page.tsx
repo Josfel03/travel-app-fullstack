@@ -29,7 +29,7 @@ export default function PagoExitosoPage() {
           {/* --- ¡AQUÍ ESTÁ EL CAMBIO! --- */}
           {/* Reemplazamos el <img> por un <a> (enlace) estilizado como botón */}
           <a 
-            href={`http://localhost:5000/api/ticket/pdf/${codigoReserva}`}
+            href={`${process.env.NEXT_PUBLIC_API_URL}/api/ticket/pdf/${codigoReserva}`}
             target="_blank" // Abre el PDF en una nueva pestaña
             rel="noopener noreferrer"
             className="w-full p-4 bg-brand-alert text-white font-bold rounded-xl shadow-lg transition hover:bg-opacity-90 flex items-center justify-center text-lg"
