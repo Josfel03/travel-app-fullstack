@@ -14,13 +14,16 @@ from flask_jwt_extended import JWTManager, create_access_token, jwt_required, ge
 from fpdf import FPDF
 
 # --- CORRECCIÓN DE RUTA PARA RAILWAY ---
+# Asegura que Python pueda encontrar 'models.py'
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# --- 1. Inicialización de Extensiones (SIN LA APP) ---
-db = SQLAlchemy()
+# --- (NUEVO) Importamos 'db' y los modelos DESDE models.py ---
+from models import db, Usuarios, Rutas, Corridas, Reservas, AsientosReservados, AsientosBloqueados
+
+# --- Inicialización de Extensiones (SIN LA APP) ---
 bcrypt = Bcrypt()
 jwt = JWTManager()
-from models import Usuarios, Rutas, Corridas, Reservas, AsientosReservados, AsientosBloqueados
+
 
 def create_app():
     """
@@ -29,25 +32,31 @@ def create_app():
     """
     app = Flask(__name__)
 
-    # --- 2. Configuración desde Variables de Entorno ---
+    # --- 1. Configuración desde Variables de Entorno (¡CLAVE!) ---
+    # Lee la BD de Railway, o usa tu BD local si 'DATABASE_URL' no existe
     app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
         'DATABASE_URL', 
         'postgresql://travel_admin:123456@localhost/travel_tour_db'
     )
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+    # Lee las llaves secretas de las variables de Railway
     app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'default-secret-key-para-local-debug')
     app.config['STRIPE_SECRET_KEY'] = os.environ.get('STRIPE_SECRET_KEY')
     app.config['STRIPE_WEBHOOK_SECRET'] = os.environ.get('STRIPE_WEBHOOK_SECRET')
+    
     app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
     
-    stripe.api_key = app.config['STRIPE_SECRET_KEY']
+    # Asignamos la llave a Stripe (solo si existe, para evitar errores al crear tablas)
+    if app.config['STRIPE_SECRET_KEY']:
+        stripe.api_key = app.config['STRIPE_SECRET_KEY']
 
-    # --- 3. Conectar Extensiones a la App ---
+    # --- 2. Conectar Extensiones a la App ---
     db.init_app(app)
     bcrypt.init_app(app)
     jwt.init_app(app)
     
-    # --- 4. Configurar CORS ---
+    # --- 3. Configurar CORS ---
     # Lee la URL del frontend de Vercel/localhost
     frontend_url = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
     CORS(app, resources={
@@ -56,7 +65,10 @@ def create_app():
         }
     })
 
-    # --- 5. Registrar Rutas (Blueprints) ---
+
+    # --- 4. Registrar Rutas (Blueprints) ---
+    # (Movemos todas las definiciones de rutas DENTRO de la factory)
+    
     with app.app_context():
         # --- RUTAS DE LA API (Definidas dentro del contexto de la app) ---
         
@@ -367,6 +379,7 @@ def create_app():
                 
                 if codigo_reserva:
                     try:
+                        # (NUEVO) Usamos app_context() para operaciones de BD en el webhook
                         with app.app_context():
                             reserva = Reservas.query.filter_by(codigo_reserva=codigo_reserva).first()
                             if reserva and reserva.estado_pago == 'pendiente':
@@ -708,7 +721,6 @@ def create_app():
 
 # --- 7. (Opcional) Correr localmente ---
 # Este bloque solo se usa si corres 'python app.py'
-# ¡CORRECCIÓN! El 'app = create_app()' debe estar aquí
 if __name__ == '__main__':
     app = create_app()
     app.run(debug=True, host='0.0.0.0', port=5000)

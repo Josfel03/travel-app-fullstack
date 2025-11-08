@@ -3,10 +3,10 @@ from datetime import datetime
 
 # --- (¡CAMBIO IMPORTANTE!) ---
 # Inicializamos la extensión 'db' aquí, VACÍA.
-# Se conectará a la app en app.py
+# app.py importará esta variable 'db'
 db = SQLAlchemy()
 
-# --- Tus modelos (sin cambios, solo importando 'db') ---
+# --- Tus modelos (Usan la 'db' definida arriba) ---
 
 class Usuarios(db.Model):
     __tablename__ = 'usuarios'
