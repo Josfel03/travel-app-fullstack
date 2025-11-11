@@ -6,7 +6,7 @@ import "./globals.css"; // <-- 1. IMPORTA LOS ESTILOS DE TAILWIND
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Reservas - Pacífico Tour",
+  title: "Reservas - Travel App",
   description: "Sistema de reservas de transporte",
 };
 

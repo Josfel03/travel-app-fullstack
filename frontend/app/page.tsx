@@ -69,7 +69,7 @@ export default function Home() {
       <div className="container mx-auto max-w-lg p-4 min-h-screen flex flex-col">
         
         <header className="text-center my-6">
-          <h1 className="text-3xl font-bold text-brand-primary">Pacífico Tour</h1>
+          <h1 className="text-3xl font-bold text-brand-primary">TRAVEL APP</h1>
           <p className="text-gray-600">Viajes Turísticos Chilpancingo ↔ CDMX</p>
         </header>
 
@@ -114,7 +114,7 @@ export default function Home() {
         </main>
         
         <footer className="text-center mt-8 text-gray-400 text-sm">
-          © 2025 Pacífico Tour. Todos los derechos reservados.
+          © 2025 JFML Todos los derechos reservados.
         </footer>
       </div>
     </div>
