@@ -6,13 +6,13 @@ This application is fully deployed and operational.
 
 Try the Live Frontend (Vercel): [https://travel-app-fullstack.vercel.app/]
 
-See the Backend API (Railway): [(https://travel-app-fullstack-production-23f9.up.railway.app/api/test)]/api/test
+See the Backend API (Railway): [https://travel-app-fullstack-production-23f9.up.railway.app]/api/test
 
 📸 Project Showcase
 
 This GIF demonstrates the complete user booking flow: selecting a date and time, choosing specific seats from the van map, filling passenger details, and being redirected to Stripe for payment.
 
-[./img/travelDemo.png]
+![Project demo](./img/travelDemo.png)
 
 📖 Project Overview
 
@@ -88,8 +88,8 @@ A running local instance of PostgreSQL
 
 1. Clone the Repository
 
-git clone [https://github.com/your-username/your-repo-name.git](https://github.com/your-username/your-repo-name.git)
-cd your-repo-name
+git clone [https://github.com/Josfel03/travel-app-fullstack](https://github.com/Josfel03/travel-app-fullstack)
+cd [travel-app-fullstack]
 
 
 2. Backend Setup (Flask)
