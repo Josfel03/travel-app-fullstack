@@ -4,15 +4,15 @@ Full-Stack E-Commerce Reservation System (Next.js, Flask, PostgreSQL, Stripe)
 
 This application is fully deployed and operational.
 
-Try the Live Frontend (Vercel): [YOUR_VERCEL_LINK_HERE]
+Try the Live Frontend (Vercel): [https://travel-app-fullstack.vercel.app/]
 
-See the Backend API (Railway): [YOUR_RAILWAY_LINK_HERE]/api/test
+See the Backend API (Railway): [(https://travel-app-fullstack-production-23f9.up.railway.app/api/test)]/api/test
 
 📸 Project Showcase
 
 This GIF demonstrates the complete user booking flow: selecting a date and time, choosing specific seats from the van map, filling passenger details, and being redirected to Stripe for payment.
 
-[Insert GIF of booking flow here]
+[./img/travelDemo.png]
 
 📖 Project Overview
 
